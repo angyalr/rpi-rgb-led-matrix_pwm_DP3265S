@@ -156,8 +156,8 @@ static const SPWM_Panel_Settings SPWM_DP3265S_SETTINGS = []() {
 }();
 
 // DP3265S configuration registers
-static const uint16_t SPWM_DP3265S_REG02 = 0x023f;  // LINE_SET
-static const uint16_t SPWM_DP3265S_REG03 = 0x033F;  // GROUP_SET
+static const uint16_t SPWM_DP3265S_REG02 = 0x021f;  // LINE_SET
+static const uint16_t SPWM_DP3265S_REG03 = 0x031f;  // GROUP_SET
 static const uint16_t SPWM_DP3265S_REG04 = 0x0440;  // PWM_WIDTH
 static const uint16_t SPWM_DP3265S_REG05 = 0x0550;  // DISSHD_TIME
 static const uint16_t SPWM_DP3265S_REG06 = 0x0642;  // PLL_DIV
