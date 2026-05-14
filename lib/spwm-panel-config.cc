@@ -156,14 +156,14 @@ static const SPWM_Panel_Settings SPWM_DP3265S_SETTINGS = []() {
 }();
 
 // DP3265S configuration registers
-static const uint16_t SPWM_DP3265S_REG02 = 0x022A;  // LINE_SET
+static const uint16_t SPWM_DP3265S_REG02 = 0x023f;  // LINE_SET
 static const uint16_t SPWM_DP3265S_REG03 = 0x033F;  // GROUP_SET
 static const uint16_t SPWM_DP3265S_REG04 = 0x0440;  // PWM_WIDTH
 static const uint16_t SPWM_DP3265S_REG05 = 0x0550;  // DISSHD_TIME
 static const uint16_t SPWM_DP3265S_REG06 = 0x0642;  // PLL_DIV
 
 static const uint8_t SPWM_DP3265S_LAT_CYCLES[][1] = {
-    {8}, {8}, {8}, {8}, {8},
+    {5}, {5}, {5}, {5}, {5},
 };
 static const SPWM_Register_Timing SPWM_DP3265S_REGISTER_TIMINGS[] = {
     spwm_make_register_timing(SPWM_DP3265S_LAT_CYCLES[0]),
@@ -175,7 +175,8 @@ static const SPWM_Register_Timing SPWM_DP3265S_REGISTER_TIMINGS[] = {
 
 // Init‑sequence: 14 pre‑activation LAT + 5 register writes + két extra “stabilization LAT”.
 static const SPWM_Init_Step SPWM_DP3265S_INIT_STEPS[] = {
-    {SPWM_INIT_STEP_LAT_PULSES, 14, 0, 0},
+    {SPWM_INIT_STEP_LAT_PULSES, 3,  0, 0},  // VSYNC
+    {SPWM_INIT_STEP_LAT_PULSES, 14, 0, 0},  // PRE_ACT
     {SPWM_INIT_STEP_REGISTER, 1, 0, 0}, // REG02
     {SPWM_INIT_STEP_REGISTER, 2, 0, 0}, // REG03
     {SPWM_INIT_STEP_REGISTER, 3, 0, 0}, // REG04
