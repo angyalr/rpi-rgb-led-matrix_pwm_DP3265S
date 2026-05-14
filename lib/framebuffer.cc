@@ -197,6 +197,38 @@ private:
   const gpio_bits_t dck_;
 };
 
+// SM5166PFRowAddressSetter: 4 db SM5166PF 1/8-scan dekóder chip kezelése.
+//
+// ABC=0..7 → mind a 4 chipen egyszerre aktiválódik 1-1 kimenet:
+//   ABC=0 → fizikai sorok 0, 8, 16, 24 egyszerre
+//   ABC=7 → fizikai sorok 7, 15, 23, 31 egyszerre
+// D/E nincs bekötve (GND), csak ABC használt.
+class SM5166PFRowAddressSetter : public RowAddressSetter {
+public:
+  SM5166PFRowAddressSetter(int double_rows, const HardwareMapping &h)
+    : row_mask_(h.a | h.b | h.c),
+      last_row_(-1) {
+    for (int i = 0; i < double_rows; ++i) {
+      int scan_row = i % 8;
+      gpio_bits_t row_address = 0;
+      row_address |= (scan_row & 0x01) ? h.a : 0;
+      row_address |= (scan_row & 0x02) ? h.b : 0;
+      row_address |= (scan_row & 0x04) ? h.c : 0;
+      row_lookup_[i] = row_address;
+    }
+  }
+  virtual gpio_bits_t need_bits() const { return row_mask_; }
+  virtual void SetRowAddress(GPIO *io, int row) {
+    if (row == last_row_) return;
+    io->WriteMaskedBits(row_lookup_[row], row_mask_);
+    last_row_ = row;
+  }
+private:
+  gpio_bits_t row_mask_;
+  gpio_bits_t row_lookup_[32];
+  int last_row_;
+};
+
 // Panels such as FM6363 and ICND1065L advance the next row during the blank
 // clocks instead of latching a direct A/B/C row address ahead of time. This
 // setter only reserves those pins and returns them low when the logical row
@@ -341,6 +373,8 @@ RowAddressSetter *CreateSpwmRowTransportSetter(int double_rows,
     case SPWM_ROW_ADDRESS_TYPE_1_SHIFTREG_BLANK_CLOCK:
     case SPWM_ROW_ADDRESS_TYPE_2_SHIFTREG_AB_BLANK_CLOCK:
       return new SPWMBlankClockRowSelectSetter(h);
+    case SPWM_ROW_ADDRESS_TYPE_3_SM5166PF:
+      return new SM5166PFRowAddressSetter(double_rows, h);    
     default:
       return NULL;
   }

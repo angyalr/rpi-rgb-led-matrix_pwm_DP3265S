@@ -351,7 +351,7 @@ void PrintMatrixFlags(FILE *out, const RGBMatrix::Options &d,
           "(Default: %d).\n"
           "\t--led-row-addr-type=<0..5>: 0 = default; 1 = AB-addressed panels; 2 = direct row select; 3 = ABC-addressed panels; 4 = ABC Shift + DE direct; 5 = shift-register row select "
           "(Default: 0).\n\n"
-          "\t--led-spwm-row-addr-type=<0..2>: SPWM-only row-address transport. 0 = direct A-E row flow; 1 = shift-register blank-clock A/C row-select; 2 = shift-register blank-clock A+B with wrap-C row-select "
+          "\t--led-spwm-row-addr-type=<0..3>: SPWM-only row-address transport. 0 = direct A-E row flow; 1 = shift-register blank-clock A/C row-select; 2 = shift-register blank-clock A+B with wrap-C row-select, 3 = SM5166PF row select "
           "(Default: 0).\n"
           "\t--led-spwm-scan=<rows>    : SPWM-only scan-row override e.g 43 for 1/43 (Default: 0)"
           "(Default: %d).\n\n"
@@ -456,8 +456,8 @@ bool RGBMatrix::Options::Validate(std::string *err_in) const {
     success = false;
   }
 
-  if (spwm_row_address_type < 0 || spwm_row_address_type > 2) {
-    err->append("SPWM row address type values can be 0 (direct A-E SPWM row flow), 1 (shift-register blank-clock A/C row-select path), or 2 (shift-register blank-clock A+B with wrap-C row-select path).\n");
+  if (spwm_row_address_type < 0 || spwm_row_address_type > 3) {
+    err->append("SPWM row address type values can be 0 (direct A-E SPWM row flow), 1 (shift-register blank-clock A/C row-select path), 2 (shift-register blank-clock A+B with wrap-C row-select path), or 3 (SM5166PF row select).\n");
     success = false;
   }
 
