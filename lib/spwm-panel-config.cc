@@ -138,6 +138,7 @@ static const SPWM_Panel_Settings SPWM_DP3265S_SETTINGS = []() {
   s.default_columns = 64;
   s.upload_channels_per_chip = 16;
   s.upload_word_bits = 16;
+  s.upload_chip_count = 6;              // 6 chip daisy-chain / logikai sor
   s.auto_tune_oe_gaps = false;
   s.auto_tune_frames = 0;
   s.auto_tune_max_step_clks = 0;
@@ -156,7 +157,7 @@ static const SPWM_Panel_Settings SPWM_DP3265S_SETTINGS = []() {
 }();
 
 // DP3265S configuration registers
-static const uint16_t SPWM_DP3265S_REG02 = 0x023f;  // LINE_SET
+static const uint16_t SPWM_DP3265S_REG02 = 0x021f;  // LINE_SET
 static const uint16_t SPWM_DP3265S_REG03 = 0x033F;  // GROUP_SET
 static const uint16_t SPWM_DP3265S_REG04 = 0x0440;  // PWM_WIDTH
 static const uint16_t SPWM_DP3265S_REG05 = 0x0550;  // DISSHD_TIME
