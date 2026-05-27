@@ -60,6 +60,7 @@ cdef extern from "led-matrix.h" namespace "rgb_matrix::RGBMatrix":
         int scan_mode
         int row_address_type
         int spwm_row_address_type
+        int spwm_scan_rows
         int multiplexing
 
         bool disable_hardware_pulsing

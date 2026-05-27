@@ -31,6 +31,7 @@ struct SPWM_Upload_Geometry {
 enum SPWM_OE_Style {
   SPWM_OE_STYLE_FM6373 = 0,
   SPWM_OE_STYLE_FM6363 = 1,
+  SPWM_OE_STYLE_DP3265S = 2,  // ROW pulse after DAT_LAT only, no free-run
 };
 
 // SPWM-only row-address transport selected by --led-spwm-row-addr-type.

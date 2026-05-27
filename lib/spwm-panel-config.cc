@@ -1,5 +1,6 @@
 // -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*-
 #include "spwm-panel-config.h"
+#include "spwm-panel-ini.h"
 
 #include <string.h>
 #include <strings.h>
@@ -128,8 +129,9 @@ size_t spwm_resolve_register_repeat_count(
 }
 
 // -------------------------------------------------------------------------------------------------
-// DP3265S profile definition (rev 2026-05-13)
-// Based on DP3265S Rev2.3 datasheet: 64x32 P4, 48 driver chips.
+// DP3265S profile definition (rev 2026-05-19)
+// Based on DP3265S Rev2.3 datasheet and DP3264 reference implementation.
+// 64x32 P4 panel, 48 driver chips, 8 per data line, 4 per logical row.
 // -------------------------------------------------------------------------------------------------
 
 static const SPWM_Panel_Settings SPWM_DP3265S_SETTINGS = []() {
@@ -138,160 +140,125 @@ static const SPWM_Panel_Settings SPWM_DP3265S_SETTINGS = []() {
   s.default_columns = 64;
   s.upload_channels_per_chip = 16;
   s.upload_word_bits = 16;
-  s.upload_chip_count = 6;              // 6 chip daisy-chain / logikai sor
+  s.upload_chip_count = 8;
   s.auto_tune_oe_gaps = false;
   s.auto_tune_frames = 0;
   s.auto_tune_max_step_clks = 0;
-  s.first_oe_clk_length = 10;           // shorter OE pulse
-  s.end_of_frame_extra_row_cycles = 32; // datasheet typical
-  s.frame_end_sleep_us = 500;           // allow PLL to lock
-  s.oe_during_upload_clk_count = 64;
-  s.oe_after_upload_clk_count = 64;
-  s.oe_clk_look_behind = 8;
+  s.end_of_frame_extra_row_cycles = 64;
+  s.frame_end_sleep_us = 0;
+  s.oe_during_upload_clk_count = 128;
+  s.oe_after_upload_clk_count = 128;
+  s.oe_clk_look_behind = 16;
   s.oe_clk_length = 4;
+  s.first_oe_clk_length = 12;
   s.shiftreg_row_select_a_pulse_clk_count = 2;
   s.shiftreg_row_select_a_pulse_start_clk = 0;
   s.shiftreg_row_select_a_pulse_centered = true;
-  s.oe_style = SPWM_OE_STYLE_FM6373;    // reuse FM63xx gate pattern
+  s.oe_style = SPWM_OE_STYLE_DP3265S;
   return s;
 }();
 
-// DP3265S configuration registers
-static const uint16_t SPWM_DP3265S_REG02 = 0x021f;  // LINE_SET
-static const uint16_t SPWM_DP3265S_REG03 = 0x033F;  // GROUP_SET
-static const uint16_t SPWM_DP3265S_REG04 = 0x0440;  // PWM_WIDTH
-static const uint16_t SPWM_DP3265S_REG05 = 0x0550;  // DISSHD_TIME
+// 13 configuration registers, values from DP3264 reference (board707).
+// REG02 adjusted for 32-row panel (LINE_NUM = 31 = 0x1F).
+static const uint16_t SPWM_DP3265S_REG01 = 0x1100;
+static const uint16_t SPWM_DP3265S_REG02 = 0x0207;  // LINE_SET: 32 scan rows
+static const uint16_t SPWM_DP3265S_REG03 = 0x033F;  // GROUP_SET: 64 groups
+static const uint16_t SPWM_DP3265S_REG04 = 0x043F;  // PWM_WIDTH: 256 DCLK/row
+static const uint16_t SPWM_DP3265S_REG05 = 0x0504;  // DISSHD_TIME: short dead-time
 static const uint16_t SPWM_DP3265S_REG06 = 0x0642;  // PLL_DIV
+static const uint16_t SPWM_DP3265S_REG07 = 0x0700;
+static const uint16_t SPWM_DP3265S_REG08 = 0x08BF;
+static const uint16_t SPWM_DP3265S_REG09 = 0x0960;
+static const uint16_t SPWM_DP3265S_REG0A = 0x0ABE;
+static const uint16_t SPWM_DP3265S_REG0B = 0x0B8B;
+static const uint16_t SPWM_DP3265S_REG0C = 0x0C88;
+static const uint16_t SPWM_DP3265S_REG0D = 0x0D12;
 
-static const uint8_t SPWM_DP3265S_LAT_CYCLES[][1] = {
-    {5}, {5}, {5}, {5}, {5},
-};
+// All registers use 5-CLK tail-latch (WR_CFG command), matching DP3264 reference.
+static const uint8_t SPWM_DP3265S_LAT[] = {5};
 static const SPWM_Register_Timing SPWM_DP3265S_REGISTER_TIMINGS[] = {
-    spwm_make_register_timing(SPWM_DP3265S_LAT_CYCLES[0]),
-    spwm_make_register_timing(SPWM_DP3265S_LAT_CYCLES[1]),
-    spwm_make_register_timing(SPWM_DP3265S_LAT_CYCLES[2]),
-    spwm_make_register_timing(SPWM_DP3265S_LAT_CYCLES[3]),
-    spwm_make_register_timing(SPWM_DP3265S_LAT_CYCLES[4]),
+    spwm_make_register_timing(SPWM_DP3265S_LAT),
+    spwm_make_register_timing(SPWM_DP3265S_LAT),
+    spwm_make_register_timing(SPWM_DP3265S_LAT),
+    spwm_make_register_timing(SPWM_DP3265S_LAT),
+    spwm_make_register_timing(SPWM_DP3265S_LAT),
+    spwm_make_register_timing(SPWM_DP3265S_LAT),
+    spwm_make_register_timing(SPWM_DP3265S_LAT),
+    spwm_make_register_timing(SPWM_DP3265S_LAT),
+    spwm_make_register_timing(SPWM_DP3265S_LAT),
+    spwm_make_register_timing(SPWM_DP3265S_LAT),
+    spwm_make_register_timing(SPWM_DP3265S_LAT),
+    spwm_make_register_timing(SPWM_DP3265S_LAT),
+    spwm_make_register_timing(SPWM_DP3265S_LAT),
 };
 
-// Init‑sequence: 14 pre‑activation LAT + 5 register writes + két extra “stabilization LAT”.
+// Init sequence: VSYNC + 16 fill CLKs + PRE_ACT, repeated for each register.
+// The 16 space_clocks after VSYNC fill the shift register (matches DP3264
+// send_clocks(16) call between send_vsync() and send_latches(14)).
 static const SPWM_Init_Step SPWM_DP3265S_INIT_STEPS[] = {
-    {SPWM_INIT_STEP_LAT_PULSES, 3,  0, 0},  // VSYNC
-    {SPWM_INIT_STEP_LAT_PULSES, 14, 0, 0},  // PRE_ACT
-    {SPWM_INIT_STEP_REGISTER, 1, 0, 0}, // REG02
-    {SPWM_INIT_STEP_REGISTER, 2, 0, 0}, // REG03
-    {SPWM_INIT_STEP_REGISTER, 3, 0, 0}, // REG04
-    {SPWM_INIT_STEP_REGISTER, 4, 0, 0}, // REG05
-    {SPWM_INIT_STEP_REGISTER, 5, 0, 0}, // REG06
-    {SPWM_INIT_STEP_LAT_PULSES, 2, 0, 0},
+    {SPWM_INIT_STEP_LAT_PULSES, 3,  0, 16},  // VSYNC + 16 fill CLKs
+    {SPWM_INIT_STEP_LAT_PULSES, 14, 0, 0},   // PRE_ACT
+    {SPWM_INIT_STEP_REGISTER,   1,  0, 0},   // REG11
+    {SPWM_INIT_STEP_LAT_PULSES, 3,  0, 16},
+    {SPWM_INIT_STEP_LAT_PULSES, 14, 0, 0},
+    {SPWM_INIT_STEP_REGISTER,   2,  0, 0},   // REG02
+    {SPWM_INIT_STEP_LAT_PULSES, 3,  0, 16},
+    {SPWM_INIT_STEP_LAT_PULSES, 14, 0, 0},
+    {SPWM_INIT_STEP_REGISTER,   3,  0, 0},   // REG03
+    {SPWM_INIT_STEP_LAT_PULSES, 3,  0, 16},
+    {SPWM_INIT_STEP_LAT_PULSES, 14, 0, 0},
+    {SPWM_INIT_STEP_REGISTER,   4,  0, 0},   // REG04
+    {SPWM_INIT_STEP_LAT_PULSES, 3,  0, 16},
+    {SPWM_INIT_STEP_LAT_PULSES, 14, 0, 0},
+    {SPWM_INIT_STEP_REGISTER,   5,  0, 0},   // REG05
+    {SPWM_INIT_STEP_LAT_PULSES, 3,  0, 16},
+    {SPWM_INIT_STEP_LAT_PULSES, 14, 0, 0},
+    {SPWM_INIT_STEP_REGISTER,   6,  0, 0},   // REG06
+    {SPWM_INIT_STEP_LAT_PULSES, 3,  0, 16},
+    {SPWM_INIT_STEP_LAT_PULSES, 14, 0, 0},
+    {SPWM_INIT_STEP_REGISTER,   7,  0, 0},   // REG07
+    {SPWM_INIT_STEP_LAT_PULSES, 3,  0, 16},
+    {SPWM_INIT_STEP_LAT_PULSES, 14, 0, 0},
+    {SPWM_INIT_STEP_REGISTER,   8,  0, 0},   // REG08
+    {SPWM_INIT_STEP_LAT_PULSES, 3,  0, 16},
+    {SPWM_INIT_STEP_LAT_PULSES, 14, 0, 0},
+    {SPWM_INIT_STEP_REGISTER,   9,  0, 0},   // REG09
+    {SPWM_INIT_STEP_LAT_PULSES, 3,  0, 16},
+    {SPWM_INIT_STEP_LAT_PULSES, 14, 0, 0},
+    {SPWM_INIT_STEP_REGISTER,   10, 0, 0},   // REG0A
+    {SPWM_INIT_STEP_LAT_PULSES, 3,  0, 16},
+    {SPWM_INIT_STEP_LAT_PULSES, 14, 0, 0},
+    {SPWM_INIT_STEP_REGISTER,   11, 0, 0},   // REG0B
+    {SPWM_INIT_STEP_LAT_PULSES, 3,  0, 16},
+    {SPWM_INIT_STEP_LAT_PULSES, 14, 0, 0},
+    {SPWM_INIT_STEP_REGISTER,   12, 0, 0},   // REG0C
+    {SPWM_INIT_STEP_LAT_PULSES, 3,  0, 16},
+    {SPWM_INIT_STEP_LAT_PULSES, 14, 0, 0},
+    {SPWM_INIT_STEP_REGISTER,   13, 0, 0},   // REG0D
 };
+
 static const SPWM_Init_Sequence SPWM_DP3265S_INIT_SEQUENCE =
     spwm_make_init_sequence(SPWM_DP3265S_INIT_STEPS);
 
-// Register write‑builder
 SPWM_Config spwm_create_dp3265s_config(const SPWM_Panel_Settings &cfg, int cols) {
-  SPWM_Config c(5,
+  SPWM_Config c(13,
                 SPWM_DP3265S_REGISTER_TIMINGS[0],
                 spwm_resolve_register_repeat_count(cfg, cols));
-  c.spwm_add_register(1, {SPWM_DP3265S_REG02}, &SPWM_DP3265S_REGISTER_TIMINGS[0]);
-  c.spwm_add_register(2, {SPWM_DP3265S_REG03}, &SPWM_DP3265S_REGISTER_TIMINGS[1]);
-  c.spwm_add_register(3, {SPWM_DP3265S_REG04}, &SPWM_DP3265S_REGISTER_TIMINGS[2]);
-  c.spwm_add_register(4, {SPWM_DP3265S_REG05}, &SPWM_DP3265S_REGISTER_TIMINGS[3]);
-  c.spwm_add_register(5, {SPWM_DP3265S_REG06}, &SPWM_DP3265S_REGISTER_TIMINGS[4]);
+  c.spwm_add_register(1,  {SPWM_DP3265S_REG01}, &SPWM_DP3265S_REGISTER_TIMINGS[0]);
+  c.spwm_add_register(2,  {SPWM_DP3265S_REG02}, &SPWM_DP3265S_REGISTER_TIMINGS[1]);
+  c.spwm_add_register(3,  {SPWM_DP3265S_REG03}, &SPWM_DP3265S_REGISTER_TIMINGS[2]);
+  c.spwm_add_register(4,  {SPWM_DP3265S_REG04}, &SPWM_DP3265S_REGISTER_TIMINGS[3]);
+  c.spwm_add_register(5,  {SPWM_DP3265S_REG05}, &SPWM_DP3265S_REGISTER_TIMINGS[4]);
+  c.spwm_add_register(6,  {SPWM_DP3265S_REG06}, &SPWM_DP3265S_REGISTER_TIMINGS[5]);
+  c.spwm_add_register(7,  {SPWM_DP3265S_REG07}, &SPWM_DP3265S_REGISTER_TIMINGS[6]);
+  c.spwm_add_register(8,  {SPWM_DP3265S_REG08}, &SPWM_DP3265S_REGISTER_TIMINGS[7]);
+  c.spwm_add_register(9,  {SPWM_DP3265S_REG09}, &SPWM_DP3265S_REGISTER_TIMINGS[8]);
+  c.spwm_add_register(10, {SPWM_DP3265S_REG0A}, &SPWM_DP3265S_REGISTER_TIMINGS[9]);
+  c.spwm_add_register(11, {SPWM_DP3265S_REG0B}, &SPWM_DP3265S_REGISTER_TIMINGS[10]);
+  c.spwm_add_register(12, {SPWM_DP3265S_REG0C}, &SPWM_DP3265S_REGISTER_TIMINGS[11]);
+  c.spwm_add_register(13, {SPWM_DP3265S_REG0D}, &SPWM_DP3265S_REGISTER_TIMINGS[12]);
   return c;
 }
-
-// // -------------------------------------------------------------------------------------------------
-// // DP3265S profile definition.
-// // Based on DP3264S datasheet for 64x32 panels (64 columns, 32 rows).
-// // -------------------------------------------------------------------------------------------------
-
-// static const SPWM_Panel_Settings SPWM_DP3265S_SETTINGS = []() {
-//   SPWM_Panel_Settings spwm_settings = spwm_make_default_panel_settings();
-//   spwm_settings.default_rows = 32;
-//   spwm_settings.default_columns = 64;
-//   spwm_settings.auto_tune_oe_gaps = false;
-//   spwm_settings.auto_tune_frames = 0;
-//   spwm_settings.auto_tune_max_step_clks = 0;
-//   spwm_settings.first_oe_clk_length = 12;
-//   spwm_settings.end_of_frame_extra_row_cycles = 53;
-//   spwm_settings.frame_end_sleep_us = 300;
-//   spwm_settings.oe_during_upload_clk_count = 112;
-//   spwm_settings.oe_after_upload_clk_count = 112;
-//   spwm_settings.oe_clk_look_behind = 16;
-//   spwm_settings.oe_clk_length = 4;
-//   spwm_settings.oe_style = SPWM_OE_STYLE_FM6373;
-//   return spwm_settings;
-// }();
-
-// // DP3265S register defaults from datasheet (registers 0x02 to 0x06 for basic config)
-// static const uint16_t SPWM_DP3265S_REGISTER1_WORD = 0x022A;  // reg0x02: LINE_SET=0x2A
-// static const uint16_t SPWM_DP3265S_REGISTER2_WORD = 0x033F;  // reg0x03: GROUP_SET=0x3F
-// static const uint16_t SPWM_DP3265S_REGISTER3_WORD = 0x0420;  // reg0x04: PWM_WIDTH=0x20
-// static const uint16_t SPWM_DP3265S_REGISTER4_WORD = 0x0534;  // reg0x05: DISSHD_TIME defaults
-// static const uint16_t SPWM_DP3265S_REGISTER5_WORD = 0x0642;  // reg0x06: PLL_DIV=0x42
-
-// static const size_t SPWM_DP3265S_REGISTER_COUNT = 5;
-// static const uint8_t SPWM_DP3265S_REGISTER_SEND_LAT[][2] = {
-//     {0, 5},  // 5 DCLK LAT after the register payload, per datasheet.
-//     {0, 5},
-//     {0, 5},
-//     {0, 5},
-//     {0, 5},
-// };
-// static const SPWM_Register_Timing SPWM_DP3265S_REGISTER_TIMINGS[] = {
-//     spwm_make_register_timing(SPWM_DP3265S_REGISTER_SEND_LAT[0]),
-//     spwm_make_register_timing(SPWM_DP3265S_REGISTER_SEND_LAT[1]),
-//     spwm_make_register_timing(SPWM_DP3265S_REGISTER_SEND_LAT[2]),
-//     spwm_make_register_timing(SPWM_DP3265S_REGISTER_SEND_LAT[3]),
-//     spwm_make_register_timing(SPWM_DP3265S_REGISTER_SEND_LAT[4]),
-// };
-
-// // DP3265S init sequence: send PRE_ACT (LAT pulses), then WR_CFG (registers)
-// // The DP3264S datasheet 11.1 startup table is grouped into four phases;
-// // this profile currently models PRE_ACT plus the five fixed register writes.
-// // The register blocks use a pure post-data LAT latch, because DP3265S appears
-// // to require LE after the payload rather than overlapping the final data clocks.
-// static const SPWM_Init_Step SPWM_DP3265S_INIT_STEPS[] = {
-//     // PRE_ACT: LAT pulses for pre-activation
-//     // DP3264S datasheet table 11.1 specifies 14 LE pulses in PRE_ACT.
-//     {SPWM_INIT_STEP_LAT_PULSES, 14, 0, 0},  // 14 LAT pulses for PRE_ACT
-//     // WR_CFG: send registers
-//     {SPWM_INIT_STEP_REGISTER, 1, 0, 0},     // Send register 0x02
-//     {SPWM_INIT_STEP_REGISTER, 2, 0, 0},     // Send register 0x03
-//     {SPWM_INIT_STEP_REGISTER, 3, 0, 0},     // Send register 0x04
-//     {SPWM_INIT_STEP_REGISTER, 4, 0, 0},     // Send register 0x05
-//     {SPWM_INIT_STEP_REGISTER, 5, 0, 0},     // Send register 0x06
-// };
-
-// static const SPWM_Init_Sequence SPWM_DP3265S_INIT_SEQUENCE =
-//     spwm_make_init_sequence(SPWM_DP3265S_INIT_STEPS);
-
-// // Purpose: Build the DP3265S register layout for the active panel width.
-// // Inputs: Panel timing/settings and the resolved column count.
-// // Outputs: A runtime register bundle with fixed words.
-// // Side effects: None.
-// SPWM_Config spwm_create_dp3265s_config(const SPWM_Panel_Settings &spwm_settings,
-//                                        int spwm_columns) {
-//   SPWM_Config spwm_config(SPWM_DP3265S_REGISTER_COUNT,
-//                           SPWM_DP3265S_REGISTER_TIMINGS[0],
-//                           spwm_resolve_register_repeat_count(spwm_settings,
-//                                                              spwm_columns));
-
-//   // Fixed registers for DP3265S
-//   spwm_config.spwm_add_register(1, {SPWM_DP3265S_REGISTER1_WORD},
-//                                 &SPWM_DP3265S_REGISTER_TIMINGS[0]);
-//   spwm_config.spwm_add_register(2, {SPWM_DP3265S_REGISTER2_WORD},
-//                                 &SPWM_DP3265S_REGISTER_TIMINGS[1]);
-//   spwm_config.spwm_add_register(3, {SPWM_DP3265S_REGISTER3_WORD},
-//                                 &SPWM_DP3265S_REGISTER_TIMINGS[2]);
-//   spwm_config.spwm_add_register(4, {SPWM_DP3265S_REGISTER4_WORD},
-//                                 &SPWM_DP3265S_REGISTER_TIMINGS[3]);
-//   spwm_config.spwm_add_register(5, {SPWM_DP3265S_REGISTER5_WORD},
-//                                 &SPWM_DP3265S_REGISTER_TIMINGS[4]);
-
-//   return spwm_config;
-// }
 
 static const size_t SPWM_FM6373_REGISTER_COUNT = 5;
 static const uint8_t SPWM_FM6373_REGISTER_SEND_LAT[][1] = {
@@ -435,7 +402,7 @@ static const SPWM_Panel_Settings SPWM_ICND1065L_SETTINGS = []() {
   spwm_settings.oe_clk_look_behind = 0;
   spwm_settings.oe_clk_length = 4;
   spwm_settings.shiftreg_row_select_a_pulse_clk_count = 6;
-  spwm_settings.oe_style = SPWM_OE_STYLE_FM6373;
+  spwm_settings.oe_style = SPWM_OE_STYLE_FM6363;
   return spwm_settings;
 }();
 static const uint16_t SPWM_ICND1065L_REGISTER1_WORD = 0x00AA;
@@ -773,12 +740,15 @@ const SPWM_Panel_Profile *spwm_find_panel_profile(const char *spwm_panel_type) {
 
 SPWM_Panel_Settings spwm_resolve_profile_settings(
     const SPWM_Panel_Profile &spwm_profile, int spwm_columns) {
+  SPWM_Panel_Settings result;
   if (spwm_profile.panel_type != nullptr &&
       strcasecmp(spwm_profile.panel_type, "icnd1065l") == 0) {
-    return spwm_resolve_icnd1065l_settings(spwm_columns);
+    result = spwm_resolve_icnd1065l_settings(spwm_columns);
+  } else {
+    result = spwm_profile.settings;
   }
-  return spwm_profile.settings;
+  spwm_apply_ini_overrides(&result, spwm_profile.panel_type);
+  return result;
 }
-
 }  // namespace internal
 }  // namespace rgb_matrix

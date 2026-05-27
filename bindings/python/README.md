@@ -8,14 +8,19 @@ If you have a different than the standard wiring (for instance if you have an
 Adafruit HAT), you can edit the [../../lib/Makefile](../../lib/Makefile#L26) first to choose
 the hardware in question (see below for setting it via command line argument).
 
-Then, in the root directory for the matrix library simply type:
+Then, in the root directory for the matrix library, build and install the
+package with pip. This binding is now built through CMake and
+scikit-build-core; the former `make build-python` target is no longer used.
 
 ### Python 3
 
 ```shell
-sudo apt-get update && sudo apt-get install python3-dev cython3 -y
-make build-python 
-sudo make install-python 
+sudo apt-get update
+sudo apt-get install python3-dev python3-pil cython3 python3-venv build-essential cmake -y
+python3 -m venv --system-site-packages .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install .
 ```
 
 ### PyPy

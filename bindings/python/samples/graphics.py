@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 from samplebase import SampleBase
+from pathlib import Path
 from rgbmatrix import graphics
 import time
 
+DEFAULT_FONT = str(Path(__file__).resolve().parents[3] / "fonts" / "7x13.bdf")
 
 class GraphicsTest(SampleBase):
     def __init__(self, *args, **kwargs):
@@ -11,7 +13,7 @@ class GraphicsTest(SampleBase):
     def run(self):
         canvas = self.matrix
         font = graphics.Font()
-        font.LoadFont("../../../fonts/7x13.bdf")
+        font.LoadFont(DEFAULT_FONT)
 
         red = graphics.Color(255, 0, 0)
         graphics.DrawLine(canvas, 5, 5, 22, 13, red)

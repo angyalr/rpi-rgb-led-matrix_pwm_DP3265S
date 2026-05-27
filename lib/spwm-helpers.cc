@@ -4,6 +4,7 @@
 #include "spwm-panel-config.h"
 #include "framebuffer-internal.h"
 
+#include <cstdio>
 #include <algorithm>
 #include <errno.h>
 #include <limits.h>
@@ -255,6 +256,17 @@ int spwm_map_physical_column_to_visible(
     }
   }
   return spwm_visible_column;
+}
+
+bool spwm_uses_dp3265s_banked_upload(const SPWM_Panel_Settings &spwm_settings,
+                                     const SPWM_Framebuffer_View &spwm_view,
+                                     int spwm_chip_count,
+                                     int spwm_channels_per_chip) {
+  return spwm_settings.oe_style == SPWM_OE_STYLE_DP3265S &&
+         spwm_view.rows == 32 &&
+         spwm_view.columns == 64 &&
+         spwm_chip_count == 8 &&
+         spwm_channels_per_chip == 16;
 }
 
 // Return the init sequence associated with the default panel profile.
@@ -839,6 +851,10 @@ void spwm_emit_init_sequence(GPIO *io, const HardwareMapping &h) {
         break;
     }
   }
+}
+
+void spwm_emit_dp3265s_frame_vsync(GPIO *io, const HardwareMapping &h) {
+  spwm_send_lat_pulses(io, h, 0, 3, 16);
 }
 
 // -----------------------
@@ -1515,6 +1531,10 @@ void spwm_upload_framebuffer_blocks(
   const SPWM_Pixel_Block_GPIO_Bits spwm_zero_block_gpio_bits = {{0}};
   const SPWM_Panel_Settings &spwm_settings = spwm_get_panel_settings();
   const int spwm_last_chip = spwm_chip_count - 1;
+  const bool spwm_dp3265s_banked_upload =
+      spwm_uses_dp3265s_banked_upload(spwm_settings, spwm_framebuffer_view,
+                                      spwm_chip_count,
+                                      spwm_channels_per_chip);
   const size_t spwm_row_stride =
       static_cast<size_t>(spwm_framebuffer_view.columns) *
       static_cast<size_t>(spwm_framebuffer_view.stored_bitplanes);
@@ -1529,14 +1549,30 @@ void spwm_upload_framebuffer_blocks(
       io->ClearBits(h.clock | h.strobe | spwm_rgb_mask);
 
       for (int spwm_chip = 0; spwm_chip < spwm_chip_count; ++spwm_chip) {
-        const int spwm_physical_column =
-            spwm_chip * spwm_channels_per_chip + spwm_channel;
-        const int spwm_column = spwm_map_physical_column_to_visible(
-            spwm_physical_column, spwm_settings);
+        int spwm_column = -1;
+        const gpio_bits_t *spwm_block_row_base = spwm_row_base;
+
+        if (spwm_dp3265s_banked_upload) {
+          const int spwm_physical_chip = spwm_last_chip - spwm_chip;
+          const int spwm_row_bank = spwm_physical_chip / 4;
+          const int spwm_chip_in_bank = 3 - (spwm_physical_chip % 4);
+          const int spwm_bank_row = spwm_row + spwm_row_bank * 8;
+          spwm_column = spwm_chip_in_bank * spwm_channels_per_chip +
+                        spwm_channel;
+          spwm_block_row_base =
+              spwm_framebuffer_view.bitplane_buffer +
+              static_cast<size_t>(spwm_bank_row) * spwm_row_stride;
+        } else {
+          const int spwm_physical_column =
+              spwm_chip * spwm_channels_per_chip + spwm_channel;
+          spwm_column = spwm_map_physical_column_to_visible(
+              spwm_physical_column, spwm_settings);
+        }
+
         const SPWM_Pixel_Block_GPIO_Bits spwm_block_gpio_bits =
             (spwm_column >= 0 && spwm_column < spwm_framebuffer_view.columns)
                 ? spwm_repack_pixel_block_gpio_bits(
-                      spwm_row_base + spwm_column,
+                      spwm_block_row_base + spwm_column,
                       spwm_framebuffer_view.columns,
                       spwm_framebuffer_view.pwm_bits,
                       spwm_rgb_mask)
@@ -1577,6 +1613,18 @@ void spwm_upload_framebuffer_direct(
     return;
   }
 
+  const bool spwm_dp3265s_decoupled_upload =
+      spwm_get_panel_settings().oe_style == SPWM_OE_STYLE_DP3265S;
+  const bool spwm_is_dat_lat_only =
+      (spwm_upload_scan_config.oe_clks == 0) &&
+      spwm_upload_rows > 0 &&
+      spwm_get_panel_settings().oe_style == SPWM_OE_STYLE_DP3265S &&
+      !spwm_dp3265s_decoupled_upload;
+  const int spwm_dat_lat_row_pulse_clks = spwm_get_panel_settings().oe_clk_length;
+  const int spwm_dat_lat_first_row_pulse_clks =
+      spwm_get_panel_settings().first_oe_clk_length;
+  int spwm_dat_lat_row_counter = 0;  // tracks which row we're on for W12/W4
+
   spwm_upload_framebuffer_blocks(
       io, h, spwm_framebuffer_view, spwm_rgb_mask, spwm_upload_rows,
       spwm_chip_count, spwm_channels_per_chip,
@@ -1584,7 +1632,8 @@ void spwm_upload_framebuffer_direct(
           bool spwm_is_last_chip) {
         for (int spwm_bit = spwm_word_bits - 1; spwm_bit >= 0; --spwm_bit) {
           const bool spwm_direct_defer_row_scan = *spwm_initial_oe_pending;
-          if (!spwm_direct_defer_row_scan) {
+          if (!spwm_direct_defer_row_scan &&
+              !spwm_dp3265s_decoupled_upload) {
             spwm_scan_pre_clock_direct_upload(
                 io, spwm_row_setter, spwm_upload_rows, spwm_upload_scan_config,
                 spwm_oe_gate, spwm_scan_state);
@@ -1595,13 +1644,36 @@ void spwm_upload_framebuffer_direct(
           spwm_clock_pulse(io, h,
                            spwm_block_gpio_bits.word_gpio_bits[spwm_bit],
                            spwm_data_mask, spwm_oe_gate);
-          if (spwm_latch) io->ClearBits(h.strobe);
+          if (spwm_latch) {
+            io->ClearBits(h.strobe);
+            // DP3265S: emit a ROW (OE) pulse after each DAT_LAT.
+            // The chip uses this to step its internal scan counter.
+            if (spwm_is_dat_lat_only) {
+              // fprintf(stderr, "SPWM DEBUG: DAT_LAT direct latch: dat_lat_row_counter=%d upload_rows=%d scan_row=%d\n",
+              //         spwm_dat_lat_row_counter, spwm_upload_rows,
+              //         spwm_scan_state->row);
+              // ROW pulse after every DAT_LAT, in sync with ABC row change.
+              // W12 for first row of frame (sync), W4 for all others.
+              const int spwm_row_pulse_clks =
+                  (spwm_dat_lat_row_counter == 0)
+                      ? spwm_dat_lat_first_row_pulse_clks
+                      : spwm_dat_lat_row_pulse_clks;
+              io->SetBits(h.output_enable);
+              for (int spwm_i = 0; spwm_i < spwm_row_pulse_clks; ++spwm_i) {
+                io->SetBits(h.clock);
+                io->ClearBits(h.clock);
+              }
+              io->ClearBits(h.output_enable);
+              spwm_dat_lat_row_counter =
+                  (spwm_dat_lat_row_counter + 1) % spwm_upload_rows;
+            }
+          }
 
           if (spwm_direct_defer_row_scan) {
             spwm_finish_shared_initial_oe_if_ready(
                 spwm_initial_oe_pending, spwm_upload_scan_config,
                 spwm_oe_gate, spwm_scan_state);
-          } else {
+          } else if (!spwm_dp3265s_decoupled_upload) {
             spwm_scan_post_clock(spwm_upload_scan_config, spwm_scan_state);
           }
         }
@@ -1692,6 +1764,10 @@ void spwm_upload_framebuffer_shiftreg(
     return;
   }
 
+  const bool spwm_is_dat_lat_only_sr =
+      spwm_get_panel_settings().oe_style == SPWM_OE_STYLE_DP3265S;
+  const int spwm_dat_lat_row_pulse_clks_sr = spwm_get_panel_settings().oe_clk_length;
+
   spwm_upload_framebuffer_blocks(
       io, h, spwm_framebuffer_view, spwm_rgb_mask, spwm_upload_rows,
       spwm_chip_count, spwm_channels_per_chip,
@@ -1710,7 +1786,22 @@ void spwm_upload_framebuffer_shiftreg(
           spwm_clock_pulse(io, h,
                            spwm_block_gpio_bits.word_gpio_bits[spwm_bit],
                            spwm_data_mask, spwm_oe_gate);
-          if (spwm_latch) io->ClearBits(h.strobe);
+          if (spwm_latch) {
+            io->ClearBits(h.strobe);
+            // DP3265S: emit a ROW (OE) pulse after each DAT_LAT.
+            // The chip uses this to step its internal scan counter.
+            if (spwm_is_dat_lat_only_sr) {
+              // fprintf(stderr, "SPWM DEBUG: DAT_LAT shiftreg latch: scan_row=%d upload_rows=%d\n",
+              //         spwm_scan_state->row, spwm_upload_rows);
+              const int spwm_row_pulse_clks = spwm_dat_lat_row_pulse_clks_sr;
+              io->SetBits(h.output_enable);
+              for (int spwm_i = 0; spwm_i < spwm_row_pulse_clks; ++spwm_i) {
+                io->SetBits(h.clock);
+                io->ClearBits(h.clock);
+              }
+              io->ClearBits(h.output_enable);
+            }
+          }
 
           if (spwm_shiftreg_defer_row_scan) {
             spwm_finish_shared_initial_oe_if_ready(
@@ -1764,6 +1855,47 @@ void spwm_free_run_scan(GPIO *io, const HardwareMapping &h,
                                spwm_free_scan_config, spwm_scan_state);
   }
   io->ClearBits(h.output_enable);
+}
+
+void spwm_dp3265s_display_scan(GPIO *io, const HardwareMapping &h,
+                               RowAddressSetter *spwm_row_setter,
+                               gpio_bits_t spwm_rgb_mask,
+                               int spwm_row_cycles) {
+  if (io == nullptr || spwm_row_setter == nullptr || spwm_row_cycles <= 0) {
+    return;
+  }
+
+  static int spwm_dp3265s_row = 0;
+  static int spwm_dp3265s_group_row = 0;
+
+  const SPWM_Panel_Settings &spwm_settings = spwm_get_panel_settings();
+  const int spwm_w4_clks = std::max(0, spwm_settings.oe_clk_length);
+  const int spwm_w12_clks = std::max(0, spwm_settings.first_oe_clk_length);
+  const int spwm_row_period_clks =
+      std::max(spwm_settings.oe_after_upload_clk_count,
+               std::max(spwm_w12_clks, spwm_w4_clks) + 1);
+
+  io->ClearBits(spwm_rgb_mask | h.strobe | h.clock);
+  for (int spwm_cycle = 0; spwm_cycle < spwm_row_cycles; ++spwm_cycle) {
+    spwm_row_setter->SetRowAddress(io, spwm_dp3265s_row);
+
+    const bool spwm_group_start = (spwm_dp3265s_group_row == 0);
+    const int spwm_row_pulse_clks =
+        spwm_group_start ? spwm_w12_clks : spwm_w4_clks;
+
+    io->SetBits(h.output_enable);  // HUB75 OE pin is DP3265S ROW here.
+    for (int spwm_clk = 0; spwm_clk < spwm_row_period_clks; ++spwm_clk) {
+      if (spwm_clk == spwm_row_pulse_clks) {
+        io->ClearBits(h.output_enable);
+      }
+      io->SetBits(h.clock);
+      io->ClearBits(h.clock);
+    }
+    io->ClearBits(h.output_enable);
+
+    spwm_dp3265s_row = (spwm_dp3265s_row + 1) & 0x07;
+    spwm_dp3265s_group_row = (spwm_dp3265s_group_row + 1) % (64 * 8);
+  }
 }
 
 // Return how many clocks must be emitted after a shift-register wrap so the
@@ -1936,10 +2068,17 @@ SPWM_OE_Style spwm_get_active_oe_style() {
   return spwm_settings.oe_style;
 }
 
+// Returns true for panels where OE/ROW must only pulse after DAT_LAT,
+// not during upload or in free-run. The chip manages its own PWM internally.
+bool spwm_oe_style_is_dat_lat_only(SPWM_OE_Style spwm_oe_style) {
+  return spwm_oe_style == SPWM_OE_STYLE_DP3265S;
+}
+
 bool spwm_oe_style_uses_row_before_oe(SPWM_OE_Style spwm_oe_style) {
   switch (spwm_oe_style) {
     case SPWM_OE_STYLE_FM6363:
       return true;
+    case SPWM_OE_STYLE_DP3265S:
     case SPWM_OE_STYLE_FM6373:
     default:
       return false;
@@ -1951,6 +2090,7 @@ bool spwm_oe_style_shares_initial_oe_with_upload(
   switch (spwm_oe_style) {
     case SPWM_OE_STYLE_FM6363:
       return true;
+    case SPWM_OE_STYLE_DP3265S:
     case SPWM_OE_STYLE_FM6373:
     default:
       return false;
@@ -1961,6 +2101,7 @@ bool spwm_oe_style_pulse_each_clock(SPWM_OE_Style spwm_oe_style) {
   switch (spwm_oe_style) {
     case SPWM_OE_STYLE_FM6363:
       return true;
+    case SPWM_OE_STYLE_DP3265S:
     case SPWM_OE_STYLE_FM6373:
     default:
       return false;
@@ -1981,10 +2122,17 @@ SPWM_Scan_Config spwm_make_runtime_scan_config(
     SPWM_OE_Style spwm_oe_style,
     int spwm_row_clks,
     bool spwm_skip_first_oe) {
+  int spwm_oe_clks = spwm_get_oe_clk_length();
+  if (spwm_oe_style_is_dat_lat_only(spwm_oe_style)) {
+    // DP3265S panels drive their own internal PWM via ROW pulses after
+    // DAT_LAT, so the generic upload/free-run OE gating path must be
+    // suppressed.
+    spwm_oe_clks = 0;
+  }
   return spwm_make_scan_config(
       spwm_row_clks,
       spwm_resolve_scan_setup_clks(spwm_oe_style, spwm_row_clks),
-      spwm_get_oe_clk_length(),
+      spwm_oe_clks,
       spwm_skip_first_oe,
       spwm_oe_style_uses_row_before_oe(spwm_oe_style));
 }
@@ -2299,10 +2447,17 @@ void spwm_dump_to_matrix(GPIO *io, const HardwareMapping &h,
   const int spwm_channels_per_chip =
       spwm_upload_geometry.channels_per_chip;
   const int spwm_word_bits = spwm_upload_geometry.word_bits;
-  const int spwm_upload_rows =
+  int spwm_upload_rows =
       spwm_upload_geometry.double_rows > 0
           ? spwm_upload_geometry.double_rows
           : spwm_framebuffer_view.double_rows;
+  const bool spwm_dp3265s_banked_upload =
+      spwm_uses_dp3265s_banked_upload(
+          spwm_get_panel_settings(), spwm_framebuffer_view, spwm_chip_count,
+          spwm_channels_per_chip);
+  if (spwm_dp3265s_banked_upload) {
+    spwm_upload_rows = 8;
+  }
 
   // Prepare per-frame timing state. The same scan state is reused during
   // the initial OE pulse, RGB upload, and the post-upload display phase.
@@ -2325,16 +2480,31 @@ void spwm_dump_to_matrix(GPIO *io, const HardwareMapping &h,
                                      false};
   SPWM_Scan_State spwm_scan_state = {0, 0, false, false, 0, false};
   const int spwm_init_oe_clks = spwm_get_first_oe_clk_length();
+  const int spwm_upload_clock_count =
+      spwm_oe_style_is_dat_lat_only(spwm_oe_style)
+          ? spwm_upload_geometry.clocks_per_block
+          : spwm_get_oe_during_upload_clk_count();
   const SPWM_Scan_Config spwm_upload_scan_config =
       spwm_make_runtime_scan_config(spwm_oe_style,
-                                    spwm_get_oe_during_upload_clk_count(),
+                                    spwm_upload_clock_count,
                                     true);
 
-  // Start the frame with the panel-specific init script. FM6373-style panels
-  // use a simple direct-row init sequence, while FM6363 adds per-register LAT
-  // postambles.
+  // Start the frame with the panel-specific init script.
+  // For DP3265S, only emit the init sequence on the first frame to avoid
+  // ABC=0 staying active too long during register writes every frame.
+  static bool spwm_dp3265s_init_done = false;
+  const bool spwm_skip_init =
+      spwm_oe_style_is_dat_lat_only(spwm_oe_style) && spwm_dp3265s_init_done;
   io->ClearBits(h.output_enable);
-  spwm_emit_init_sequence(io, h);
+  if (!spwm_skip_init) {
+    spwm_emit_init_sequence(io, h);
+    if (spwm_oe_style_is_dat_lat_only(spwm_oe_style)) {
+      spwm_dp3265s_init_done = true;
+    }
+  }
+  if (spwm_oe_style_is_dat_lat_only(spwm_oe_style)) {
+    spwm_emit_dp3265s_frame_vsync(io, h);
+  }
 
   // Both paths start from logical row 0.
   //
@@ -2351,11 +2521,33 @@ void spwm_dump_to_matrix(GPIO *io, const HardwareMapping &h,
   // overrideable independently through --led-spwm-row-addr-type.
   const bool spwm_share_initial_oe_with_upload =
       spwm_oe_style_shares_initial_oe_with_upload(spwm_oe_style);
-  bool spwm_initial_oe_pending = spwm_start_initial_oe_phase(
-      io, h, spwm_rgb_mask, spwm_data_mask, spwm_init_oe_clks,
-      spwm_upload_scan_config, spwm_blank_clock_row_transport,
-      spwm_share_initial_oe_with_upload,
-      &spwm_oe_gate, &spwm_scan_state);
+
+  // fprintf(stderr,
+  //         "SPWM DEBUG: rows=%d cols=%d double_rows=%d chips=%d channels=%d "
+  //         "word_bits=%d upload_rows=%d effective_scan_rows=%d "
+  //         "blank_clock=%d oe_style=%d share_initial_oe=%d\n",
+  //         spwm_framebuffer_view.rows,
+  //         spwm_framebuffer_view.columns,
+  //         spwm_upload_geometry.double_rows,
+  //         spwm_chip_count,
+  //         spwm_channels_per_chip,
+  //         spwm_word_bits,
+  //         spwm_upload_rows,
+  //         spwm_effective_scan_rows,
+  //         spwm_blank_clock_row_transport ? 1 : 0,
+  //         spwm_oe_style,
+  //         spwm_share_initial_oe_with_upload ? 1 : 0);
+
+  bool spwm_initial_oe_pending = false;
+  if (!spwm_oe_style_is_dat_lat_only(spwm_oe_style)) {
+    spwm_initial_oe_pending = spwm_start_initial_oe_phase(
+        io, h, spwm_rgb_mask, spwm_data_mask, spwm_init_oe_clks,
+        spwm_upload_scan_config, spwm_blank_clock_row_transport,
+        spwm_share_initial_oe_with_upload,
+        &spwm_oe_gate, &spwm_scan_state);
+  } else {
+    spwm_oe_gate.section = SPWM_AUTO_TUNE_SECTION_UPLOAD;
+  }
 
   // Upload the RGB data for each logical row. Each logical row contains both
   // halves at once (R1/G1/B1 for the top half and R2/G2/B2 for the bottom
@@ -2400,45 +2592,55 @@ void spwm_dump_to_matrix(GPIO *io, const HardwareMapping &h,
                                     spwm_oe_after_upload_clk_count,
                                     false);
 
-  // After upload, keep scanning rows and pulsing OE so the completed frame
-  // stays visible for the configured hold period.
-  spwm_oe_gate.section = SPWM_AUTO_TUNE_SECTION_FREE;
-  spwm_free_run_scan(io, h, spwm_rgb_mask, spwm_data_mask, spwm_row_setter,
-                     spwm_effective_scan_rows,
-                     spwm_end_of_frame_extra_row_cycles,
-                     spwm_free_scan_config, spwm_scan_pre_clock_handler,
-                     &spwm_oe_gate, &spwm_scan_state);
+  // After upload, keep scanning rows and pulsing OE/ROW so the completed
+  // frame stays visible for the configured hold period. On DP3265S the HUB75
+  // OE pin is a ROW input, so this scan is intentionally separated from the
+  // framebuffer upload.
+  if (spwm_oe_style_is_dat_lat_only(spwm_oe_style)) {
+    spwm_dp3265s_display_scan(
+        io, h, spwm_row_setter, spwm_rgb_mask,
+        std::max(8, spwm_end_of_frame_extra_row_cycles));
+  } else {
+    spwm_oe_gate.section = SPWM_AUTO_TUNE_SECTION_FREE;
+    spwm_free_run_scan(io, h, spwm_rgb_mask, spwm_data_mask, spwm_row_setter,
+                       spwm_effective_scan_rows,
+                       spwm_end_of_frame_extra_row_cycles,
+                       spwm_free_scan_config, spwm_scan_pre_clock_handler,
+                       &spwm_oe_gate, &spwm_scan_state);
 
-  // Finish on a clean row-wrap boundary so the next frame starts from a
-  // predictable scan position.
-  SPWM_Scan_Config spwm_align_scan_config = spwm_free_scan_config;
-  const int spwm_row_address_type = spwm_get_runtime_state().row_address_type;
-  // Ensures TYPE_2_SHIFTREG_AB_BLANK_CLOCK - OE stays aligned with Channel A/B pulse.
-  if (spwm_row_address_type !=
-      SPWM_ROW_ADDRESS_TYPE_2_SHIFTREG_AB_BLANK_CLOCK) {
-    // TYPE_2_SHIFTREG_AB_BLANK_CLOCK relies on the normal FM6373-style OE/B overlap to keep the final
-    // wrap pulse aligned with the rest of the frame, so preserve that runtime timing instead of forcing the row advance ahead of OE here.
-    spwm_align_scan_config.row_before_oe = true;
-    spwm_refresh_scan_config_derived_fields(&spwm_align_scan_config);
+    // Finish on a clean row-wrap boundary so the next frame starts from a
+    // predictable scan position.
+    SPWM_Scan_Config spwm_align_scan_config = spwm_free_scan_config;
+    const int spwm_row_address_type = spwm_get_runtime_state().row_address_type;
+    if (spwm_row_address_type !=
+        SPWM_ROW_ADDRESS_TYPE_2_SHIFTREG_AB_BLANK_CLOCK) {
+      spwm_align_scan_config.row_before_oe = true;
+      spwm_refresh_scan_config_derived_fields(&spwm_align_scan_config);
+    }
+    spwm_oe_gate.section = SPWM_AUTO_TUNE_SECTION_FREE;
+    spwm_align_frame_end_to_row_wrap(
+        io, h, spwm_rgb_mask, spwm_data_mask, spwm_row_setter,
+        spwm_effective_scan_rows, spwm_align_scan_config,
+        spwm_scan_pre_clock_handler,
+        &spwm_oe_gate, &spwm_scan_state);
   }
-  spwm_oe_gate.section = SPWM_AUTO_TUNE_SECTION_FREE;
-  spwm_align_frame_end_to_row_wrap(
-      io, h, spwm_rgb_mask, spwm_data_mask, spwm_row_setter,
-      spwm_effective_scan_rows, spwm_align_scan_config,
-      spwm_scan_pre_clock_handler,
-      &spwm_oe_gate, &spwm_scan_state);
 
   // Return the shared control lines to an idle state before leaving the
   // frame. This also makes the next frame start from a known baseline.
   io->ClearBits(spwm_rgb_mask | h.strobe | h.clock);
-  io->WriteMaskedBits(0, h.a | h.b | h.c | h.d | h.e);
+  if (!spwm_oe_style_is_dat_lat_only(spwm_oe_style)) {
+    io->WriteMaskedBits(0, h.a | h.b | h.c | h.d | h.e);
+  }
 
   // Feed the measured gaps back into the auto-tuner, then apply any optional
   // inter-frame sleep requested by the panel profile.
   spwm_auto_tune_end_frame(&spwm_auto_tune_state);
 
   const int spwm_frame_end_sleep_us = spwm_get_frame_end_sleep_us();
-  if (spwm_frame_end_sleep_us > 0) usleep(spwm_frame_end_sleep_us);
+  if (!spwm_oe_style_is_dat_lat_only(spwm_oe_style) &&
+      spwm_frame_end_sleep_us > 0) {
+    usleep(spwm_frame_end_sleep_us);
+  }
 }
 
 }  // namespace internal

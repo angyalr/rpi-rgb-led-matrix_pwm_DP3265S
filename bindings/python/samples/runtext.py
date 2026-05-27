@@ -2,10 +2,11 @@
 # Display a runtext with double-buffering.
 from samplebase import SampleBase
 from argparse import ArgumentTypeError
+from pathlib import Path
 from rgbmatrix import graphics
 import time
 
-DEFAULT_FONT = "../../../fonts/7x13.bdf"
+DEFAULT_FONT = str(Path(__file__).resolve().parents[3] / "fonts" / "7x13.bdf")
 
 def color(value):
     try:

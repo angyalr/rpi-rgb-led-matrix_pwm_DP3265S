@@ -10,3 +10,16 @@
 
 # python
 __pycache__/
+bindings/c#/RPiRgbLEDMatrix.csproj.lscache
+bindings/c#/examples/BoxesBoxesBoxes/BoxesBoxesBoxes.csproj.lscache
+bindings/c#/examples/FontExample/FontExample.csproj.lscache
+bindings/c#/examples/MatrixRain/MatrixRain.csproj.lscache
+bindings/c#/examples/MinimalExample/MinimalExample.csproj.lscache
+bindings/c#/examples/PlayGIF/PlayGIF.csproj.lscache
+bindings/c#/examples/PulsingBrightness/PulsingBrightness.csproj.lscache
+bindings/c#/examples/Rotating3DCube/Rotating3DCube.csproj.lscache
+bindings/c#/examples/StreamPlayer/StreamPlayer.csproj.lscache
+runtext.ini
+bindings/python/ms/runtext.py
+bindings/python/ms/samplebase.py
+bindings/python/ms/config_store.py

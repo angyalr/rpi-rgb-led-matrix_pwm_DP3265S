@@ -1,0 +1,243 @@
+# ChangeLog
+## [1.2.11] - 2026-05-05
+ - Make extended patterns compatible with SPWM classes (STM32)
+
+## [1.2.10] - 2026-04-23
+ - Make extended patterns compatible with SPWM classes (RP2040)
+ - other minor changes
+
+## [1.2.9] - 2026-04-20
+ - Merge pull request #199 from shadowpho
+ - Add ICND1065 driver support for RP & STM
+
+## [1.2.8] - 2026-03-31
+ - Change some configs for FM6363 and ICND2055 drivers.
+ - Fix MUX_595 timings.
+ - Other minor changes.
+
+## [1.2.7] - 2026-03-03
+ - Add support of new SPWM driver - SM16380SH. 
+ - Add limited brightness control for SPWM driver classes. 
+ - New color conversion from HSV to RGB444.
+ - Making SPWM driver code more stable.
+ - Other minor changes.
+
+## [1.2.6] - 2026-02-24
+ - Fix bug #190 (SPWM driver panels displays 4bit color as 1bit) 
+   for RP2040 and STM32 boards
+ - Rewrite part of SPWM support code to eliminate distortions
+   
+## [1.2.5] - 2026-01-30
+ - SPWM driver supporting code for RP2040 boards.
+ - RP2040: Rewrite SHIFT_REG multiplexor code with direct GPIO access.   
+ - STM32: Change phase of data pulses to eliminate ghostings on SPWM panels.  
+
+## [1.2.4] - 2025-12-09
+ - Full rewrite of SPWM driver supporting code.
+   Three new SPWM drivers added - DP3264, ICN2055, DP6373.
+ - Add support of SHIFT_REG multiplexors for SPWM driver panels.  
+
+## [1.2.3] - 2025-11-23
+ - Moved the multiplexer code to a separate class, which made it possible 
+   to assign the multiplexer type regardless of the driver type. 
+   For example, this add the support for shift multiplexing for FM6126a panels.
+
+## [1.2.2] - 2025-11-18
+ - Add ability of set up of font inter-character interval by selectFont() method
+
+## [1.2.1] - 2025-11-09
+ - Fix bug with UNUSED_ALL() macro (issue #165)
+ - Fix incorrect pin mapping in FM6126a driver in <COLOR_4BITS_Packed> mode.
+
+## [1.2.0] - 2025-05-29
+ - Add FM6126a driver support for RP2040 controllers  
+
+## [1.1.9] - 2025-05-23
+ - Add an ability to manage a multiple rows per pin on Parallel Monochrome mode,
+  that allow to construct a screen with more than 7 rows high.
+ - Get rid a 'unused parameter' warnings. 
+
+## [1.1.8] - 2025-05-12
+  Minor changes as:
+ - Tune limits of vertical scrolling
+ - Avoid vertical orientation of space char for standard fonts
+ - Fix typo in RP2040 DMA config
+
+## [1.1.7] - 2025-03-12
+ - Fix issue #146 - Parallel monochrome code with USE_UPPER_8BIT option 
+   doesn't work on STM32F4
+ - Add new template (issue #145)
+
+## [1.1.6] - 2024-10-05 
+ - Fix issue #131 - fast HByte not works with screen width > 255 pix
+ - Fix bug in DMD_Monochrome_Parallel clear screen function, UPPER_8BIT mode
+
+## [1.1.5] - 2024-08-23 
+ - Fix issue #124 - FM6126 not works after v1.1.0
+ - Fix issue #115 - add clock settings for overclocked RP2040
+ - Make DMD_RGB_SHIFTREG_ABC compatible with variadic templates
+ - Add Wiki docs
+ - Add new template
+
+## [1.1.4] - 2024-04-12 
+ - Fix "text not smooth" issue #86
+ - Change <COLOR_4BITS> to <COLOR_4BITS_Packed> mode in STM32F1 examples due to incompatibility 
+   with recommended pin sets.
+ - Add enableDebugPorts() call to STM32F1 examples
+ 
+## [1.1.3] - 2024-04-11 
+ - Fix display crashes Pi Pico (pull request #94)
+ - Change pattern templates to variadic, replace some old templates.
+ - Add 4 new panel templates.
+ - Add setColorOrder() method.
+
+## [1.1.2] - 2023-12-22 
+ - Add multicolor text and scrolling
+ 
+## [1.1.1] - 2023-12-20 
+ - Fix bug in standard font with charcode 0xFF
+ - Fix flickering in 4bit RGB modes on STM32 [issue#63](https://github.com/board707/DMD_STM32/issues/63)
+ - Add new matrix templates
+ 
+## [1.1.0] - 2023-11-30 
+ - FM6353/FM6363 S-PWM drivers support
+
+## [1.0.7] - 2023-11-21 
+ - Add new templates, minor bugs fix
+
+## [1.0.6] - 2023-05-15 
+ - Add support of SHIFT_REG mux for RP2040 boards
+ - Change base class of RGB_SHIFTREG_ABC to DMD_RGB rather than DMD_RGB_BASE2
+
+## [1.0.5] - 2023-05-06 
+ - Fix incorrect manage rotation flag
+ - Fix bug that text spaces doesn't covered by bg color
+
+## [1.0.4] - 2023-03-25 
+ - Add support of RGB panels with FM6126a chip
+ 
+## [1.0.1] - 2023-03-14 
+ - Remove marquee text length 255 chars limit [issue #29](https://github.com/board707/DMD_STM32/issues/29#issuecomment-1435955321)
+ - Add new RGB 64x32 s8 template
+
+## [1.0.0] - 2023-02-12 
+ - *** Incompatible changes! ***
+ - New panel template model with multi-parameter specialization
+ - Move all templates to separate file DMD_Panel_Templates.h
+ - New example for 32x16 s4 panels with variable pattern template
+ - Fix some other bugs
+
+## [0.9.5] - 2023-02-09 
+ - Add new RGB 32x16 s2 matrix template
+ - Fix some other bugs
+
+## [0.9.4] - 2022-12-31 
+ - Add Turkish fonts and examples
+ - Fix drawHbyte bug with bsize > 255
+ - Fix some other bugs
+
+## [0.9.3] - 2022-12-24 
+ - Add new RGB 32x32 matrices
+ - Replace incorrect get_base_addr() function for plain pattern
+ - Fix some other bugs
+
+## [0.9.2] - 2022-12-12 
+ - Parallel monochrome mode for RP2040-based boards
+ - Fix [issue#19](https://github.com/board707/DMD_STM32/issues/19)
+
+## [0.9.0] - 2022-09-16 
+ - Add support of RP2040-based boards (RGB modes only)
+ - Add using DMA in RGB mode for STM32F4 boards
+
+## [0.8.1] - 2022-09-15 
+ - Fix error with cycle_len for 4 and more RGB panels
+ - Fix wrong row counter in 1bit color mode for multirow panels
+
+## [0.8.0] - 2022-07-09 
+ - Add support of STM32F4 boards - blackpill STM32F401CC & STM32F411CE
+ - Add support of cheap STM32F103C6 boards
+
+## [0.7.0] - 2022-02-19 
+ - Add support of "Outdoor" RGB panels with 1/2 1/4 1/8 scans
+ - Add DMD_Config.h file for user changeable settings
+ - in Monochrome Parallel mode - add ability to choose DATA-pins at upper half of GPIO port 
+   (see USE_UPPER_8BIT setting in DMD_Config.h)
+ - optimization of Monochrome and RGB modes, many other minor changes  
+ 
+## [0.6.11] - 2022-01-15 
+ - Fix incorrect string bounds definition for standard and GFXFonts in some cases
+ - Fix artifacts in Parallel Monochrome mode
+ - Add ability to choose timer for OE other than Tim3 (see Alternative Timer Setup in DMD_STM32a.h)
+
+## [0.6.9] - 2021-12-18 
+ - Get rid PGM warnings. 
+
+## [0.6.8] - 2021-12-05 
+ - More accurate timings for RGB panels. 
+ - New way of brightness control by synchro-PWM for OE signal in all RGB matrix modes.
+ 
+## [0.6.3] - 2021-07-18
+ - Add 1-bit RGB color depth
+ - Rewrite marquee text code
+ - Many other changes as ZigZag connect scheme etc
+
+## [0.5.1] - 2021-05-26
+ - Minor fix
+
+## [0.5.0] - 2021-05-18
+   New develop branch.
+ - New module structure with base class DMD_STM32a and child modules for
+   varius Monochrome and RGB panels
+ 
+## [0.4.3] - 2020-07-31
+ - Add dual buffering
+
+## [0.4.2] - 2020-06-16   <<<<<<< Stable version for Monochrome panels
+ - Fix stepMarquee() bug in inverse displays
+ 
+## [0.4.1] - 2019-10-23
+ - Minor fix, move all STM32 specific to conditional compilation
+
+## [0.4.0] - 2019-10-16
+ - Move all timer and interrupt settings to the library from user code
+ - Add static functions to register and scan multiple DMD instances
+ - This version still not support AVR MCs
+
+## [0.3.3] - 2019-10-14
+ - Add Async DMA Transfer (STM32)
+ - Add scanDisplaybyDMA, latchDMA and init() methods
+ - Remove SPI Transactions, change SPITransfer to SPI.write
+ - This version does not support AVR MCs
+
+## [0.3.2] - 2019-09-30
+ - Fix SPI clock settings (STM32)
+ - Add Sync DMA Transfer (STM32)
+
+## [0.2.2] - 2019-09-08
+ - Change Timer2_CH1 to Timer3_CH1 and then to Timer3_CH4 for stability (STM32)
+ - Add examples of vertical scrolling (STM32 & AVR)
+ - Many bug fixes
+
+## [0.2.1] - 2019-05-17
+ - Add vertical scrolling
+
+## [0.2.0] - 2019-05-15
+ - Add new fonts
+ - Add Atmega328 support
+ - Add inverseAll flag
+ - Add possibility of using second font object for same font for national charsets
+ - Add new DMD_Font class with support of Adafruit GFX font format
+ 
+ 
+## [0.1] - 2019-05-05
+
+### Initial release.
+    Based on DMDSTM code. The functionality corresponds to the original DMD library.
+	
+### Changed 
+   - Change constructor, move pins from #define to object data
+   
+### Added
+   - Example of using two DMD instances simultaneously - double_dmd
+  
+
