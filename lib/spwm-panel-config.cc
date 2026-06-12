@@ -2,6 +2,10 @@
 #include "spwm-panel-config.h"
 #include "spwm-panel-ini.h"
 
+#include <algorithm>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
@@ -128,6 +132,138 @@ size_t spwm_resolve_register_repeat_count(
       spwm_channels_per_chip);
 }
 
+bool spwm_parse_u16_env(const char *spwm_env_name, uint16_t *spwm_value) {
+  const char *spwm_text = getenv(spwm_env_name);
+  if (spwm_text == nullptr || *spwm_text == '\0') {
+    return false;
+  }
+
+  char *spwm_end = nullptr;
+  errno = 0;
+  unsigned long spwm_parsed = strtoul(spwm_text, &spwm_end, 0);
+  if (errno != 0 || spwm_end == spwm_text || *spwm_end != '\0' ||
+      spwm_parsed > 0xffffUL) {
+    return false;
+  }
+
+  *spwm_value = static_cast<uint16_t>(spwm_parsed);
+  return true;
+}
+
+uint16_t spwm_apply_u16_env(const char *spwm_env_name,
+                            uint16_t spwm_default_value) {
+  uint16_t spwm_value = 0;
+  return spwm_parse_u16_env(spwm_env_name, &spwm_value)
+             ? spwm_value
+             : spwm_default_value;
+}
+
+bool spwm_env_enabled(const char *spwm_env_name) {
+  const char *spwm_text = getenv(spwm_env_name);
+  if (spwm_text == nullptr || *spwm_text == '\0') {
+    return false;
+  }
+  return strcasecmp(spwm_text, "0") != 0 &&
+         strcasecmp(spwm_text, "false") != 0 &&
+         strcasecmp(spwm_text, "no") != 0 &&
+         strcasecmp(spwm_text, "off") != 0;
+}
+
+int spwm_dp3265s_reg08_to_igain_tenths(uint16_t spwm_reg08) {
+  const int spwm_data = spwm_reg08 & 0xff;
+  const int spwm_coarse = (spwm_data >> 6) & 0x03;
+  const int spwm_fine = spwm_data & 0x3f;
+  return ((spwm_fine + 1) * (spwm_coarse + 1) * 1000 + 64) / 128;
+}
+
+uint16_t spwm_dp3265s_make_reg08_for_igain_tenths(
+    int spwm_target_igain_tenths) {
+  if (spwm_target_igain_tenths < 0) {
+    spwm_target_igain_tenths = 0;
+  } else if (spwm_target_igain_tenths > 2000) {
+    spwm_target_igain_tenths = 2000;
+  }
+
+  int spwm_best_data = 0;
+  int spwm_best_error = 1000000;
+  for (int spwm_coarse = 0; spwm_coarse < 4; ++spwm_coarse) {
+    for (int spwm_fine = 0; spwm_fine < 64; ++spwm_fine) {
+      const int spwm_igain_tenths =
+          ((spwm_fine + 1) * (spwm_coarse + 1) * 1000 + 64) / 128;
+      const int spwm_delta = spwm_igain_tenths - spwm_target_igain_tenths;
+      const int spwm_error = spwm_delta < 0 ? -spwm_delta : spwm_delta;
+      if (spwm_error < spwm_best_error) {
+        spwm_best_error = spwm_error;
+        spwm_best_data = (spwm_coarse << 6) | spwm_fine;
+      }
+    }
+  }
+  return static_cast<uint16_t>(0x0800 | spwm_best_data);
+}
+
+uint16_t spwm_apply_dp3265s_igain_env(uint16_t spwm_reg08,
+                                      long *spwm_brightness_percent,
+                                      int *spwm_target_igain_tenths) {
+  const char *spwm_text = getenv("SPWM_DP3265S_IGAIN_PERCENT");
+  if (spwm_text == nullptr || *spwm_text == '\0') {
+    return spwm_reg08;
+  }
+
+  char *spwm_end = nullptr;
+  errno = 0;
+  long spwm_percent = strtol(spwm_text, &spwm_end, 10);
+  if (errno != 0 || spwm_end == spwm_text || *spwm_end != '\0') {
+    return spwm_reg08;
+  }
+
+  if (spwm_percent < 0) {
+    spwm_percent = 0;
+  } else if (spwm_percent > 100) {
+    spwm_percent = 100;
+  }
+
+  const int spwm_max_igain_tenths = 2000;
+  const int spwm_target_tenths =
+      static_cast<int>((spwm_max_igain_tenths * spwm_percent + 50) / 100);
+  if (spwm_brightness_percent != nullptr) {
+    *spwm_brightness_percent = spwm_percent;
+  }
+  if (spwm_target_igain_tenths != nullptr) {
+    *spwm_target_igain_tenths = spwm_target_tenths;
+  }
+  return spwm_dp3265s_make_reg08_for_igain_tenths(spwm_target_tenths);
+}
+
+uint16_t spwm_sm16269s_make_gain_word(long spwm_percent) {
+  if (spwm_percent < 0) {
+    spwm_percent = 0;
+  } else if (spwm_percent > 100) {
+    spwm_percent = 100;
+  }
+  const int spwm_gain = static_cast<int>((63 * spwm_percent + 50) / 100);
+  return static_cast<uint16_t>(spwm_gain & 0x3f);
+}
+
+uint16_t spwm_apply_sm16269s_gain_env(uint16_t spwm_gain,
+                                      long *spwm_brightness_percent) {
+  const char *spwm_text = getenv("SPWM_SM16269S_GAIN_PERCENT");
+  if (spwm_text == nullptr || *spwm_text == '\0') {
+    return spwm_gain;
+  }
+
+  char *spwm_end = nullptr;
+  errno = 0;
+  long spwm_percent = strtol(spwm_text, &spwm_end, 10);
+  if (errno != 0 || spwm_end == spwm_text || *spwm_end != '\0') {
+    return spwm_gain;
+  }
+
+  if (spwm_brightness_percent != nullptr) {
+    *spwm_brightness_percent = std::max(0L, std::min(100L, spwm_percent));
+  }
+  return spwm_sm16269s_make_gain_word(spwm_percent);
+}
+
 // -------------------------------------------------------------------------------------------------
 // DP3265S profile definition (rev 2026-05-19)
 // Based on DP3265S Rev2.3 datasheet and DP3264 reference implementation.
@@ -244,19 +380,111 @@ SPWM_Config spwm_create_dp3265s_config(const SPWM_Panel_Settings &cfg, int cols)
   SPWM_Config c(13,
                 SPWM_DP3265S_REGISTER_TIMINGS[0],
                 spwm_resolve_register_repeat_count(cfg, cols));
-  c.spwm_add_register(1,  {SPWM_DP3265S_REG01}, &SPWM_DP3265S_REGISTER_TIMINGS[0]);
-  c.spwm_add_register(2,  {SPWM_DP3265S_REG02}, &SPWM_DP3265S_REGISTER_TIMINGS[1]);
-  c.spwm_add_register(3,  {SPWM_DP3265S_REG03}, &SPWM_DP3265S_REGISTER_TIMINGS[2]);
-  c.spwm_add_register(4,  {SPWM_DP3265S_REG04}, &SPWM_DP3265S_REGISTER_TIMINGS[3]);
-  c.spwm_add_register(5,  {SPWM_DP3265S_REG05}, &SPWM_DP3265S_REGISTER_TIMINGS[4]);
-  c.spwm_add_register(6,  {SPWM_DP3265S_REG06}, &SPWM_DP3265S_REGISTER_TIMINGS[5]);
-  c.spwm_add_register(7,  {SPWM_DP3265S_REG07}, &SPWM_DP3265S_REGISTER_TIMINGS[6]);
-  c.spwm_add_register(8,  {SPWM_DP3265S_REG08}, &SPWM_DP3265S_REGISTER_TIMINGS[7]);
-  c.spwm_add_register(9,  {SPWM_DP3265S_REG09}, &SPWM_DP3265S_REGISTER_TIMINGS[8]);
-  c.spwm_add_register(10, {SPWM_DP3265S_REG0A}, &SPWM_DP3265S_REGISTER_TIMINGS[9]);
-  c.spwm_add_register(11, {SPWM_DP3265S_REG0B}, &SPWM_DP3265S_REGISTER_TIMINGS[10]);
-  c.spwm_add_register(12, {SPWM_DP3265S_REG0C}, &SPWM_DP3265S_REGISTER_TIMINGS[11]);
-  c.spwm_add_register(13, {SPWM_DP3265S_REG0D}, &SPWM_DP3265S_REGISTER_TIMINGS[12]);
+  uint16_t regs[] = {
+      SPWM_DP3265S_REG01, SPWM_DP3265S_REG02, SPWM_DP3265S_REG03,
+      SPWM_DP3265S_REG04, SPWM_DP3265S_REG05, SPWM_DP3265S_REG06,
+      SPWM_DP3265S_REG07, SPWM_DP3265S_REG08, SPWM_DP3265S_REG09,
+      SPWM_DP3265S_REG0A, SPWM_DP3265S_REG0B, SPWM_DP3265S_REG0C,
+      SPWM_DP3265S_REG0D};
+
+  long spwm_brightness_percent = -1;
+  int spwm_target_igain_tenths = -1;
+  regs[7] = spwm_apply_dp3265s_igain_env(
+      regs[7], &spwm_brightness_percent, &spwm_target_igain_tenths);
+  regs[7] = spwm_apply_u16_env("SPWM_DP3265S_REG08", regs[7]);
+  regs[8] = spwm_apply_u16_env("SPWM_DP3265S_REG09", regs[8]);
+  regs[9] = spwm_apply_u16_env("SPWM_DP3265S_REG0A", regs[9]);
+  regs[10] = spwm_apply_u16_env("SPWM_DP3265S_REG0B", regs[10]);
+  regs[11] = spwm_apply_u16_env("SPWM_DP3265S_REG0C", regs[11]);
+  regs[12] = spwm_apply_u16_env("SPWM_DP3265S_REG0D", regs[12]);
+
+  if (spwm_env_enabled("SPWM_DP3265S_DEBUG")) {
+    fprintf(stderr,
+            "[dp3265s] brightness=%ld, target_igain=%.1f%%, "
+            "REG08=0x%04x, REG09=0x%04x, REG0A=0x%04x, "
+            "REG0B=0x%04x, REG0C=0x%04x, REG0D=0x%04x\n",
+            spwm_brightness_percent,
+            spwm_target_igain_tenths / 10.0,
+            regs[7], regs[8], regs[9], regs[10], regs[11], regs[12]);
+  }
+
+  c.spwm_add_register(1,  {regs[0]}, &SPWM_DP3265S_REGISTER_TIMINGS[0]);
+  c.spwm_add_register(2,  {regs[1]}, &SPWM_DP3265S_REGISTER_TIMINGS[1]);
+  c.spwm_add_register(3,  {regs[2]}, &SPWM_DP3265S_REGISTER_TIMINGS[2]);
+  c.spwm_add_register(4,  {regs[3]}, &SPWM_DP3265S_REGISTER_TIMINGS[3]);
+  c.spwm_add_register(5,  {regs[4]}, &SPWM_DP3265S_REGISTER_TIMINGS[4]);
+  c.spwm_add_register(6,  {regs[5]}, &SPWM_DP3265S_REGISTER_TIMINGS[5]);
+  c.spwm_add_register(7,  {regs[6]}, &SPWM_DP3265S_REGISTER_TIMINGS[6]);
+  c.spwm_add_register(8,  {regs[7]}, &SPWM_DP3265S_REGISTER_TIMINGS[7]);
+  c.spwm_add_register(9,  {regs[8]}, &SPWM_DP3265S_REGISTER_TIMINGS[8]);
+  c.spwm_add_register(10, {regs[9]}, &SPWM_DP3265S_REGISTER_TIMINGS[9]);
+  c.spwm_add_register(11, {regs[10]}, &SPWM_DP3265S_REGISTER_TIMINGS[10]);
+  c.spwm_add_register(12, {regs[11]}, &SPWM_DP3265S_REGISTER_TIMINGS[11]);
+  c.spwm_add_register(13, {regs[12]}, &SPWM_DP3265S_REGISTER_TIMINGS[12]);
+  return c;
+}
+
+// -------------------------------------------------------------------------------------------------
+// SM16269S profile definition (initial bring-up profile)
+// Based on SM16269 ZIGZZZAV1.0 datasheet. The public datasheet exposes the
+// SRAM/PWM behavior and 6-bit current gain word, but does not publish the
+// complete command/register table. Keep this profile deliberately small and
+// override-friendly so panel bring-up can tune command words from the ini/env.
+// 64x32 panel, 48 driver chips, 8 per HUB75 data line, DP3265S-like layout.
+// -------------------------------------------------------------------------------------------------
+
+static const SPWM_Panel_Settings SPWM_SM16269S_SETTINGS = []() {
+  SPWM_Panel_Settings s = SPWM_DP3265S_SETTINGS;
+  return s;
+}();
+
+static const uint16_t SPWM_SM16269S_GAIN = 0x003f;  // G5..G0 current gain, max
+static const uint16_t SPWM_SM16269S_CFG1 = 0x1810;  // ghost=3, precharge=1
+static const uint16_t SPWM_SM16269S_CFG2 = 0x3ce0;  // 1/8 scan, high-refresh, 16-bit
+// SM16269S dual-latch style: shift the 16-bit payload while LE is low, then
+// select the destination register with a post-data LE-high DCLK burst.
+static const uint8_t SPWM_SM16269S_GAIN_LAT[] = {0, 3};
+static const uint8_t SPWM_SM16269S_CFG1_LAT[] = {0, 5};
+static const uint8_t SPWM_SM16269S_CFG2_LAT[] = {0, 7};
+static const SPWM_Register_Timing SPWM_SM16269S_GAIN_TIMING =
+    spwm_make_register_timing(SPWM_SM16269S_GAIN_LAT);
+static const SPWM_Register_Timing SPWM_SM16269S_CFG1_TIMING =
+    spwm_make_register_timing(SPWM_SM16269S_CFG1_LAT);
+static const SPWM_Register_Timing SPWM_SM16269S_CFG2_TIMING =
+    spwm_make_register_timing(SPWM_SM16269S_CFG2_LAT);
+
+static const SPWM_Init_Step SPWM_SM16269S_INIT_STEPS[] = {
+    {SPWM_INIT_STEP_REGISTER, 1, 0, 0},  // current gain, post-data LE=3
+    {SPWM_INIT_STEP_REGISTER, 2, 0, 0},  // optional config1, post-data LE=5
+    {SPWM_INIT_STEP_REGISTER, 3, 0, 0},  // optional config2, post-data LE=7
+};
+
+static const SPWM_Init_Sequence SPWM_SM16269S_INIT_SEQUENCE =
+    spwm_make_init_sequence(SPWM_SM16269S_INIT_STEPS);
+
+SPWM_Config spwm_create_sm16269s_config(const SPWM_Panel_Settings &cfg, int cols) {
+  SPWM_Config c(3,
+                SPWM_SM16269S_GAIN_TIMING,
+                spwm_resolve_register_repeat_count(cfg, cols));
+  long spwm_brightness_percent = -1;
+  uint16_t gain = spwm_apply_sm16269s_gain_env(
+      SPWM_SM16269S_GAIN, &spwm_brightness_percent);
+  gain = spwm_apply_u16_env("SPWM_SM16269S_GAIN", gain);
+  uint16_t cfg1 = spwm_apply_u16_env("SPWM_SM16269S_CFG1",
+                                     SPWM_SM16269S_CFG1);
+  uint16_t cfg2 = spwm_apply_u16_env("SPWM_SM16269S_CFG2",
+                                     SPWM_SM16269S_CFG2);
+
+  if (spwm_env_enabled("SPWM_SM16269S_DEBUG")) {
+    fprintf(stderr,
+            "[sm16269s] brightness=%ld, GAIN=0x%04x, "
+            "CFG1=0x%04x, CFG2=0x%04x\n",
+            spwm_brightness_percent, gain, cfg1, cfg2);
+  }
+
+  c.spwm_add_register(1, {gain}, &SPWM_SM16269S_GAIN_TIMING);
+  c.spwm_add_register(2, {cfg1}, &SPWM_SM16269S_CFG1_TIMING);
+  c.spwm_add_register(3, {cfg2}, &SPWM_SM16269S_CFG2_TIMING);
   return c;
 }
 
@@ -712,6 +940,10 @@ static const SPWM_Panel_Profile SPWM_PANEL_PROFILES[] = {
      SPWM_DP3265S_SETTINGS,
      spwm_create_dp3265s_config,
      SPWM_DP3265S_INIT_SEQUENCE},
+    {"sm16269s",
+     SPWM_SM16269S_SETTINGS,
+     spwm_create_sm16269s_config,
+     SPWM_SM16269S_INIT_SEQUENCE},
     {"fm6363",
      SPWM_FM6363_SETTINGS,
      spwm_create_fm6363_config,

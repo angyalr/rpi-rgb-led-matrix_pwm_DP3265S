@@ -32,7 +32,7 @@ class SampleBase(object):
         self.parser.add_argument("--led-spwm-row-addr-type", action="store", help="SPWM-only row select. 0 = direct A-E row flow; 1 = shift-register blank-clock A/C row-select; 2 = shift-register blank-clock A+B with wrap-C row-select", default=0, type=int, choices=[0,1,2])
         self.parser.add_argument("--led-spwm-scan", action="store", help="SPWM scan-row count for row-select types 1/2. 0 = use rows/2", default=0, type=int)
         self.parser.add_argument("--led-multiplexing", action="store", help="Multiplexing type: 0=direct; 1=strip; 2=checker; 3=spiral; 4=ZStripe; 5=ZnMirrorZStripe; 6=coreman; 7=Kaler2Scan; 8=ZStripeUneven... (Default: 0)", default=0, type=int)
-        self.parser.add_argument("--led-panel-type", action="store", help="Needed to initialize special panels. Supported: 'FM6126A', 'FM6127', 'FM6373', 'ICND1065L', 'SM16380SH', 'FM6363'", default="", type=str)
+        self.parser.add_argument("--led-panel-type", action="store", help="Needed to initialize special panels. Supported: 'dp3265s', 'sm16269s', 'FM6126A', 'FM6127', 'FM6373', 'ICND1065L', 'SM16380SH', 'FM6363'", default="", type=str)
         self.parser.add_argument("--led-no-drop-privs", dest="drop_privileges", help="Don't drop privileges from 'root' after initializing the hardware.", action='store_false')
         self.parser.set_defaults(drop_privileges=True)
 
