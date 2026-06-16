@@ -307,7 +307,7 @@ static const uint16_t SPWM_DP3265S_REG08 = 0x08BF;
 static const uint16_t SPWM_DP3265S_REG09 = 0x0960;
 static const uint16_t SPWM_DP3265S_REG0A = 0x0ABE;
 static const uint16_t SPWM_DP3265S_REG0B = 0x0B8B;
-static const uint16_t SPWM_DP3265S_REG0C = 0x0C88;
+static const uint16_t SPWM_DP3265S_REG0C = 0x0C08;
 static const uint16_t SPWM_DP3265S_REG0D = 0x0D12;
 
 // All registers use 5-CLK tail-latch (WR_CFG command), matching DP3264 reference.
@@ -435,6 +435,7 @@ SPWM_Config spwm_create_dp3265s_config(const SPWM_Panel_Settings &cfg, int cols)
 
 static const SPWM_Panel_Settings SPWM_SM16269S_SETTINGS = []() {
   SPWM_Panel_Settings s = SPWM_DP3265S_SETTINGS;
+  s.oe_style = SPWM_OE_STYLE_SM16269S;
   return s;
 }();
 

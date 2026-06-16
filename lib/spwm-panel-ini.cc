@@ -52,6 +52,7 @@ void apply_line(SPWM_Panel_Settings *s, const char *key, const char *val) {
     if (strcasecmp(val, "fm6373") == 0)   s->oe_style = SPWM_OE_STYLE_FM6373;
     if (strcasecmp(val, "fm6363") == 0)   s->oe_style = SPWM_OE_STYLE_FM6363;
     if (strcasecmp(val, "dp3265s") == 0)  s->oe_style = SPWM_OE_STYLE_DP3265S;
+    if (strcasecmp(val, "sm16269s") == 0) s->oe_style = SPWM_OE_STYLE_SM16269S;
     return;
   }
 
@@ -106,6 +107,7 @@ void print_settings(const SPWM_Panel_Settings *s) {
     case SPWM_OE_STYLE_FM6373:  oe_style_name = "fm6373";  break;
     case SPWM_OE_STYLE_FM6363:  oe_style_name = "fm6363";  break;
     case SPWM_OE_STYLE_DP3265S: oe_style_name = "dp3265s"; break;
+    case SPWM_OE_STYLE_SM16269S: oe_style_name = "sm16269s"; break;
   }
   fprintf(stderr, "[spwm-ini] Active settings:\n");
   fprintf(stderr, "  default_rows                       = %d\n", s->default_rows);

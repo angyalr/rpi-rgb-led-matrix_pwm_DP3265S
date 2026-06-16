@@ -32,6 +32,7 @@ enum SPWM_OE_Style {
   SPWM_OE_STYLE_FM6373 = 0,
   SPWM_OE_STYLE_FM6363 = 1,
   SPWM_OE_STYLE_DP3265S = 2,  // ROW pulse after DAT_LAT only, no free-run
+  SPWM_OE_STYLE_SM16269S = 3,  // DP-like ROW/RCLK scan, dual-latch data/config
 };
 
 // SPWM-only row-address transport selected by --led-spwm-row-addr-type.
