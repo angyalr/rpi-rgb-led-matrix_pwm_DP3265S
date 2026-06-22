@@ -1,6 +1,13 @@
 Controlling RGB LED display with Raspberry Pi GPIO
 ==================================================
 
+Fork note: this tree carries experimental S-PWM panel support on top of the
+original `hzeller/rpi-rgb-led-matrix` project and the later PWM/S-PWM
+experiment work. The additions are intended to make the bring-up results for
+DP3265S and SM16269S based HUB75 panels easier to review, test, and possibly
+upstream. See [S-PWM panel notes](./spwm-panels.md) for the tested panel
+layouts and command-line examples.
+
 A library to control commonly available 128x64, 64x64, 32x32 or 16x32 RGB LED panels
 with the Raspberry Pi. Can support PWM up to 11Bit per channel, providing
 true 24bpp color with CIE1931 profile.
@@ -86,6 +93,14 @@ SPWM panels currently supported by this tree:
 
 - SM16380SH \
   `--led-panel-type=sm16380sh --led-spwm-row-addr-type=0`
+<br>
+
+- DP3265S 64x32 \
+  `--led-panel-type=dp3265s --led-rows=32 --led-cols=64 --led-spwm-row-addr-type=0`
+<br>
+
+- SM16269S 64x32 \
+  `--led-panel-type=sm16269s --led-rows=32 --led-cols=64 --led-spwm-row-addr-type=0`
 <br>
 
 Shared SPWM flags:

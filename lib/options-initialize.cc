@@ -386,7 +386,7 @@ void PrintMatrixFlags(FILE *out, const RGBMatrix::Options &d,
           !d.disable_busy_waiting ? "Don't u" : "U");
 
   fprintf(out,
-          "\t--led-slowdown-gpio=<%d..4>: "
+          "\t--led-slowdown-gpio=<%d..8>: "
           "Slowdown GPIO. Needed for faster Pis/slower panels "
           "(Default: %d (2 on Pi4, 1 other)%s).\n",
           (LED_MATRIX_ALLOW_BARRIER_DELAY ? -1 : 0), r.gpio_slowdown,

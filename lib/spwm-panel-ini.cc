@@ -39,6 +39,8 @@ void apply_line(SPWM_Panel_Settings *s, const char *key, const char *val) {
   MATCH_INT(first_oe_clk_length)
   MATCH_INT(oe_clk_length)
   MATCH_INT(oe_clk_look_behind)
+  MATCH_INT(display_oe_clk_length)
+  MATCH_INT(display_oe_start_delay_clks)
   MATCH_INT(oe_during_upload_clk_count)
   MATCH_INT(oe_after_upload_clk_count)
   MATCH_INT(auto_tune_frames)
@@ -108,6 +110,7 @@ void print_settings(const SPWM_Panel_Settings *s) {
     case SPWM_OE_STYLE_FM6363:  oe_style_name = "fm6363";  break;
     case SPWM_OE_STYLE_DP3265S: oe_style_name = "dp3265s"; break;
     case SPWM_OE_STYLE_SM16269S: oe_style_name = "sm16269s"; break;
+    case SPWM_OE_STYLE_SM16269S_FM: oe_style_name = "sm16269s_fm"; break;
   }
   fprintf(stderr, "[spwm-ini] Active settings:\n");
   fprintf(stderr, "  default_rows                       = %d\n", s->default_rows);
@@ -120,6 +123,8 @@ void print_settings(const SPWM_Panel_Settings *s) {
   fprintf(stderr, "  first_oe_clk_length                = %d\n", s->first_oe_clk_length);
   fprintf(stderr, "  oe_clk_length                      = %d\n", s->oe_clk_length);
   fprintf(stderr, "  oe_clk_look_behind                 = %d\n", s->oe_clk_look_behind);
+  fprintf(stderr, "  display_oe_clk_length              = %d\n", s->display_oe_clk_length);
+  fprintf(stderr, "  display_oe_start_delay_clks        = %d\n", s->display_oe_start_delay_clks);
   fprintf(stderr, "  oe_during_upload_clk_count         = %d\n", s->oe_during_upload_clk_count);
   fprintf(stderr, "  oe_after_upload_clk_count          = %d\n", s->oe_after_upload_clk_count);
   fprintf(stderr, "  auto_tune_oe_gaps                  = %s\n", s->auto_tune_oe_gaps ? "true" : "false");

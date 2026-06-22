@@ -10,6 +10,8 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <string.h>
+#include <strings.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -149,6 +151,9 @@ namespace {
 
 bool spwm_oe_style_is_dat_lat_only(SPWM_OE_Style spwm_oe_style);
 bool spwm_parse_env_int(const char *spwm_env_name, int *spwm_value);
+void spwm_send_lat_pulses(GPIO *io, const HardwareMapping &h,
+                          uint8_t spwm_row_bits, int spwm_lat_clocks,
+                          int spwm_space_clocks);
 
 // ------------------------------
 // Runtime state and small helpers
@@ -268,9 +273,8 @@ bool spwm_uses_dp3265s_banked_upload(const SPWM_Panel_Settings &spwm_settings,
                                      const SPWM_Framebuffer_View &spwm_view,
                                      int spwm_chip_count,
                                      int spwm_channels_per_chip) {
-  return (spwm_settings.oe_style == SPWM_OE_STYLE_DP3265S ||
-          spwm_settings.oe_style == SPWM_OE_STYLE_SM16269S) &&
-         spwm_view.rows == 32 &&
+  (void)spwm_settings;
+  return spwm_view.rows == 32 &&
          spwm_view.columns == 64 &&
          spwm_chip_count == 8 &&
          spwm_channels_per_chip == 16;
@@ -278,6 +282,29 @@ bool spwm_uses_dp3265s_banked_upload(const SPWM_Panel_Settings &spwm_settings,
 
 bool spwm_oe_style_is_sm16269s(SPWM_OE_Style spwm_oe_style) {
   return spwm_oe_style == SPWM_OE_STYLE_SM16269S;
+}
+
+bool spwm_oe_style_uses_sm16269s_post_data_latch(
+    SPWM_OE_Style spwm_oe_style) {
+  return spwm_oe_style == SPWM_OE_STYLE_SM16269S ||
+         spwm_oe_style == SPWM_OE_STYLE_SM16269S_FM;
+}
+
+bool spwm_oe_style_init_once(SPWM_OE_Style spwm_oe_style) {
+  return spwm_oe_style_is_dat_lat_only(spwm_oe_style) ||
+         spwm_get_panel_settings().init_sequence_once;
+}
+
+void spwm_emit_frame_sync_latches(GPIO *io, const HardwareMapping &h) {
+  const int spwm_sync_mode = spwm_get_panel_settings().frame_sync_latch_mode;
+  if (spwm_sync_mode == 1) {
+    spwm_send_lat_pulses(io, h, 0, 3, 6);
+    spwm_send_lat_pulses(io, h, 0, 14, 8);
+  } else if (spwm_sync_mode == 2) {
+    spwm_send_lat_pulses(io, h, 0, 3, 6);
+    spwm_send_lat_pulses(io, h, 0, 11, 3);
+    spwm_send_lat_pulses(io, h, 0, 14, 8);
+  }
 }
 
 bool spwm_continuous_display_scan_enabled() {
@@ -615,6 +642,12 @@ void spwm_apply_panel_env_overrides(SPWM_Panel_Settings *spwm_settings) {
   spwm_apply_int_env_override("SPWM_OE_CLK_LENGTH",
                               spwm_is_non_negative_env_int,
                               &spwm_settings->oe_clk_length);
+  spwm_apply_int_env_override("SPWM_DISPLAY_OE_CLK_LENGTH",
+                              spwm_is_non_negative_env_int,
+                              &spwm_settings->display_oe_clk_length);
+  spwm_apply_int_env_override("SPWM_DISPLAY_OE_START_DELAY_CLKS",
+                              spwm_is_non_negative_env_int,
+                              &spwm_settings->display_oe_start_delay_clks);
   spwm_apply_int_env_override("SPWM_SHIFT_REG_ROW_SELECT_A_PULSE_CLK_COUNT",
                               spwm_is_non_negative_env_int,
                               &spwm_settings->shiftreg_row_select_a_pulse_clk_count);
@@ -623,6 +656,30 @@ void spwm_apply_panel_env_overrides(SPWM_Panel_Settings *spwm_settings) {
                               &spwm_settings->shiftreg_row_select_a_pulse_start_clk);
   spwm_apply_bool_env_override("SPWM_SHIFT_REG_ROW_SELECT_A_PULSE_CENTERED",
                                &spwm_settings->shiftreg_row_select_a_pulse_centered);
+  spwm_apply_int_env_override("SPWM_BANKED_UPLOAD_VARIANT",
+                              spwm_is_non_negative_env_int,
+                              &spwm_settings->banked_upload_variant);
+  spwm_apply_int_env_override("SPWM_BANKED_UPLOAD_ROW_OFFSET",
+                              spwm_is_non_negative_env_int,
+                              &spwm_settings->banked_upload_row_offset);
+  spwm_apply_int_env_override("SPWM_BANKED_UPLOAD_ROW0_SOURCE",
+                              spwm_is_non_negative_env_int,
+                              &spwm_settings->banked_upload_row0_source);
+  spwm_apply_int_env_override("SPWM_BANKED_UPLOAD_ROW7_SOURCE",
+                              spwm_is_non_negative_env_int,
+                              &spwm_settings->banked_upload_row7_source);
+  spwm_apply_int_env_override("SPWM_FRAME_UPLOAD_REPEATS",
+                              spwm_is_positive_env_int,
+                              &spwm_settings->frame_upload_repeats);
+  spwm_apply_int_env_override("SPWM_DATA_LATCH_CLOCKS",
+                              spwm_is_positive_env_int,
+                              &spwm_settings->data_latch_clocks);
+  spwm_apply_int_env_override("SPWM_FIRST_DATA_LATCH_CLOCKS",
+                              spwm_is_non_negative_env_int,
+                              &spwm_settings->first_data_latch_clocks);
+  spwm_apply_int_env_override("SPWM_DISPLAY_ROW_ADDRESS_OFFSET",
+                              spwm_is_non_negative_env_int,
+                              &spwm_settings->display_row_address_offset);
 }
 
 // ---------------------
@@ -1278,8 +1335,16 @@ int spwm_compute_oe_arm_phase(int spwm_row_clks,
                               int spwm_advance_phase,
                               int spwm_oe_clks,
                               bool spwm_row_before_oe) {
-  if (spwm_oe_clks <= 0 || spwm_row_before_oe) {
+  if (spwm_oe_clks <= 0) {
     return 0;
+  }
+
+  if (spwm_row_before_oe) {
+    const SPWM_Panel_Settings &spwm_settings = spwm_get_panel_settings();
+    const int spwm_max_delay =
+        std::max(0, spwm_row_clks - std::max(1, spwm_oe_clks));
+    return std::min(std::max(0, spwm_settings.display_oe_start_delay_clks),
+                    spwm_max_delay);
   }
 
   if (spwm_get_runtime_state().row_address_type !=
@@ -1558,6 +1623,21 @@ void spwm_advance_scan_row(SPWM_Scan_State *spwm_scan_state,
   }
 }
 
+void spwm_set_direct_scan_row_address(GPIO *io,
+                                      RowAddressSetter *spwm_row_setter,
+                                      int spwm_row,
+                                      int spwm_double_rows) {
+  if (spwm_row_setter == nullptr) return;
+  int spwm_address_row = spwm_row;
+  if (spwm_double_rows > 0) {
+    const int spwm_row_offset =
+        spwm_get_panel_settings().display_row_address_offset %
+        spwm_double_rows;
+    spwm_address_row = (spwm_row + spwm_row_offset) % spwm_double_rows;
+  }
+  spwm_row_setter->SetRowAddress(io, spwm_address_row);
+}
+
 // Direct SPWM path: set the row directly, then run the SPWM clocks for that
 // row period.
 bool spwm_scan_pre_clock_direct(GPIO *io, const HardwareMapping &h,
@@ -1578,7 +1658,8 @@ bool spwm_scan_pre_clock_direct(GPIO *io, const HardwareMapping &h,
   if (spwm_scan_config.row_before_oe) {
     if (spwm_phase == spwm_scan_config.advance_phase) {
       spwm_advance_scan_row(spwm_scan_state, spwm_double_rows);
-      spwm_row_setter->SetRowAddress(io, spwm_scan_state->row);
+      spwm_set_direct_scan_row_address(
+          io, spwm_row_setter, spwm_scan_state->row, spwm_double_rows);
       spwm_advanced_row = true;
     }
 
@@ -1590,7 +1671,8 @@ bool spwm_scan_pre_clock_direct(GPIO *io, const HardwareMapping &h,
 
     if (spwm_phase == spwm_scan_config.advance_phase) {
       spwm_advance_scan_row(spwm_scan_state, spwm_double_rows);
-      spwm_row_setter->SetRowAddress(io, spwm_scan_state->row);
+      spwm_set_direct_scan_row_address(
+          io, spwm_row_setter, spwm_scan_state->row, spwm_double_rows);
       spwm_advanced_row = true;
     }
   }
@@ -1711,7 +1793,8 @@ void spwm_scan_pre_clock_direct_upload(
   if (spwm_scan_config.row_before_oe) {
     if (spwm_scan_state->phase == spwm_scan_config.advance_phase) {
       spwm_advance_scan_row(spwm_scan_state, spwm_double_rows);
-      spwm_row_setter->SetRowAddress(io, spwm_scan_state->row);
+      spwm_set_direct_scan_row_address(
+          io, spwm_row_setter, spwm_scan_state->row, spwm_double_rows);
     }
 
     spwm_scan_pre_clock_maybe_arm_oe(
@@ -1724,7 +1807,8 @@ void spwm_scan_pre_clock_direct_upload(
       spwm_scan_state->phase, spwm_scan_config, spwm_oe_gate, spwm_scan_state);
   if (spwm_scan_state->phase == spwm_scan_config.advance_phase) {
     spwm_advance_scan_row(spwm_scan_state, spwm_double_rows);
-    spwm_row_setter->SetRowAddress(io, spwm_scan_state->row);
+    spwm_set_direct_scan_row_address(
+        io, spwm_row_setter, spwm_scan_state->row, spwm_double_rows);
   }
 }
 
@@ -1734,10 +1818,9 @@ void spwm_finish_shared_initial_oe_if_ready(
     SPWM_OE_Gate_State *spwm_oe_gate,
     SPWM_Scan_State *spwm_scan_state);
 
-// Walk the framebuffer in logical-row / channel / chip order and hand each
-// pre-expanded 16-clock word block to the caller. The direct and shift-register
-// upload paths share this traversal and only differ in the per-clock scan/OE
-// scheduling wrapped around each block.
+// Walk the framebuffer and hand each pre-expanded 16-clock word block to the
+// caller. The direct and shift-register upload paths share this traversal and
+// only differ in the per-clock scan/OE scheduling wrapped around each block.
 template <typename SPWM_Block_Emitter>
 void spwm_upload_framebuffer_blocks(
     GPIO *io, const HardwareMapping &h,
@@ -1763,46 +1846,87 @@ void spwm_upload_framebuffer_blocks(
   const size_t spwm_row_stride =
       static_cast<size_t>(spwm_framebuffer_view.columns) *
       static_cast<size_t>(spwm_framebuffer_view.stored_bitplanes);
+  const bool spwm_channel_major_upload =
+      spwm_dp3265s_banked_upload &&
+      ((spwm_settings.banked_upload_variant & 0x04) != 0);
 
-  for (int spwm_row = 0; spwm_row < spwm_upload_rows; ++spwm_row) {
+  auto spwm_emit_row_channel = [&](int spwm_row, int spwm_channel) {
     const gpio_bits_t *const spwm_row_base =
         spwm_framebuffer_view.bitplane_buffer + spwm_row * spwm_row_stride;
 
+    io->ClearBits(h.clock | h.strobe | spwm_rgb_mask);
+
+    for (int spwm_chip = 0; spwm_chip < spwm_chip_count; ++spwm_chip) {
+      int spwm_column = -1;
+      const gpio_bits_t *spwm_block_row_base = spwm_row_base;
+
+      if (spwm_dp3265s_banked_upload) {
+        const int spwm_mapping_variant =
+            spwm_settings.banked_upload_variant & 0x03;
+        const bool spwm_reverse_chain =
+            (spwm_mapping_variant & 0x02) == 0;
+        const bool spwm_swap_banks =
+            (spwm_mapping_variant & 0x01) != 0;
+        const int spwm_physical_chip =
+            spwm_reverse_chain ? (spwm_last_chip - spwm_chip) : spwm_chip;
+        int spwm_row_bank = spwm_physical_chip / 4;
+        if (spwm_swap_banks) {
+          spwm_row_bank = 1 - spwm_row_bank;
+        }
+        const int spwm_chip_in_bank = spwm_reverse_chain
+                                          ? 3 - (spwm_physical_chip % 4)
+                                          : spwm_physical_chip % 4;
+        const int spwm_row_offset =
+            spwm_settings.banked_upload_row_offset % 8;
+        int spwm_source_row_in_bank = (spwm_row + spwm_row_offset) % 8;
+        if (spwm_row == 0 && spwm_settings.banked_upload_row0_source >= 0) {
+          spwm_source_row_in_bank =
+              spwm_settings.banked_upload_row0_source % 8;
+        }
+        if (spwm_row == 7 && spwm_settings.banked_upload_row7_source >= 0) {
+          spwm_source_row_in_bank =
+              spwm_settings.banked_upload_row7_source % 8;
+        }
+        const int spwm_bank_row =
+            spwm_source_row_in_bank + spwm_row_bank * 8;
+        spwm_column = spwm_chip_in_bank * spwm_channels_per_chip +
+                      spwm_channel;
+        spwm_block_row_base =
+            spwm_framebuffer_view.bitplane_buffer +
+            static_cast<size_t>(spwm_bank_row) * spwm_row_stride;
+      } else {
+        const int spwm_physical_column =
+            spwm_chip * spwm_channels_per_chip + spwm_channel;
+        spwm_column = spwm_map_physical_column_to_visible(
+            spwm_physical_column, spwm_settings);
+      }
+
+      const SPWM_Pixel_Block_GPIO_Bits spwm_block_gpio_bits =
+          (spwm_column >= 0 && spwm_column < spwm_framebuffer_view.columns)
+              ? spwm_repack_pixel_block_gpio_bits(
+                    spwm_block_row_base + spwm_column,
+                    spwm_framebuffer_view.columns,
+                    spwm_framebuffer_view.pwm_bits,
+                    spwm_rgb_mask)
+              : spwm_zero_block_gpio_bits;
+      spwm_emit_block(spwm_block_gpio_bits, spwm_chip == spwm_last_chip);
+    }
+  };
+
+  if (spwm_channel_major_upload) {
     for (int spwm_channel = 0;
          spwm_channel < spwm_channels_per_chip;
          ++spwm_channel) {
-      io->ClearBits(h.clock | h.strobe | spwm_rgb_mask);
-
-      for (int spwm_chip = 0; spwm_chip < spwm_chip_count; ++spwm_chip) {
-        int spwm_column = -1;
-        const gpio_bits_t *spwm_block_row_base = spwm_row_base;
-
-        if (spwm_dp3265s_banked_upload) {
-          const int spwm_physical_chip = spwm_last_chip - spwm_chip;
-          const int spwm_row_bank = spwm_physical_chip / 4;
-          const int spwm_chip_in_bank = 3 - (spwm_physical_chip % 4);
-          const int spwm_bank_row = spwm_row + spwm_row_bank * 8;
-          spwm_column = spwm_chip_in_bank * spwm_channels_per_chip +
-                        spwm_channel;
-          spwm_block_row_base =
-              spwm_framebuffer_view.bitplane_buffer +
-              static_cast<size_t>(spwm_bank_row) * spwm_row_stride;
-        } else {
-          const int spwm_physical_column =
-              spwm_chip * spwm_channels_per_chip + spwm_channel;
-          spwm_column = spwm_map_physical_column_to_visible(
-              spwm_physical_column, spwm_settings);
-        }
-
-        const SPWM_Pixel_Block_GPIO_Bits spwm_block_gpio_bits =
-            (spwm_column >= 0 && spwm_column < spwm_framebuffer_view.columns)
-                ? spwm_repack_pixel_block_gpio_bits(
-                      spwm_block_row_base + spwm_column,
-                      spwm_framebuffer_view.columns,
-                      spwm_framebuffer_view.pwm_bits,
-                      spwm_rgb_mask)
-                : spwm_zero_block_gpio_bits;
-        spwm_emit_block(spwm_block_gpio_bits, spwm_chip == spwm_last_chip);
+      for (int spwm_row = 0; spwm_row < spwm_upload_rows; ++spwm_row) {
+        spwm_emit_row_channel(spwm_row, spwm_channel);
+      }
+    }
+  } else {
+    for (int spwm_row = 0; spwm_row < spwm_upload_rows; ++spwm_row) {
+      for (int spwm_channel = 0;
+           spwm_channel < spwm_channels_per_chip;
+           ++spwm_channel) {
+        spwm_emit_row_channel(spwm_row, spwm_channel);
       }
     }
   }
@@ -1842,7 +1966,8 @@ void spwm_upload_framebuffer_direct(
       spwm_get_panel_settings().oe_style == SPWM_OE_STYLE_DP3265S ||
       spwm_get_panel_settings().oe_style == SPWM_OE_STYLE_SM16269S;
   const bool spwm_sm16269s_post_data_latch =
-      spwm_oe_style_is_sm16269s(spwm_get_panel_settings().oe_style);
+      spwm_oe_style_uses_sm16269s_post_data_latch(
+          spwm_get_panel_settings().oe_style);
   const bool spwm_dp3265s_data_latch =
       spwm_oe_style_is_dp3265s(spwm_get_panel_settings().oe_style);
   const bool spwm_dp3265s_first_data_vsync =
@@ -1865,7 +1990,8 @@ void spwm_upload_framebuffer_direct(
     spwm_scan_state->phase = 0;
     spwm_scan_state->oe_primed = true;
     spwm_scan_state->wrapped_to_row_zero = false;
-    spwm_row_setter->SetRowAddress(io, spwm_scan_state->row);
+    spwm_set_direct_scan_row_address(
+        io, spwm_row_setter, spwm_scan_state->row, spwm_upload_rows);
   }
 
   spwm_upload_framebuffer_blocks(
@@ -1897,20 +2023,31 @@ void spwm_upload_framebuffer_direct(
                            spwm_data_mask, spwm_oe_gate);
           if (spwm_latch) {
             if (spwm_sm16269s_post_data_latch || spwm_dp3265s_data_latch) {
-              if (spwm_dp3265s_scan_during_upload) {
+              if (spwm_sm16269s_post_data_latch ||
+                  spwm_dp3265s_scan_during_upload) {
                 spwm_cancel_oe_gate(io, h, spwm_oe_gate);
               }
-              const int spwm_post_latch_clks =
-                  (spwm_dp3265s_first_data_vsync &&
-                   spwm_first_dp3265s_data_latch)
-                      ? spwm_get_dp3265s_vsync_latch_clks()
-                      : 1;
+              int spwm_post_latch_clks = 1;
+              if (spwm_dp3265s_first_data_vsync &&
+                  spwm_first_dp3265s_data_latch) {
+                spwm_post_latch_clks = spwm_get_dp3265s_vsync_latch_clks();
+              } else if (spwm_sm16269s_post_data_latch) {
+                const SPWM_Panel_Settings &spwm_settings =
+                    spwm_get_panel_settings();
+                spwm_post_latch_clks =
+                    std::max(1, spwm_settings.data_latch_clocks);
+                if (spwm_first_dp3265s_data_latch &&
+                    spwm_settings.first_data_latch_clocks > 0) {
+                  spwm_post_latch_clks =
+                      spwm_settings.first_data_latch_clocks;
+                }
+              }
               spwm_emit_post_data_latch_pulses(
                   io, h, spwm_rgb_mask, spwm_post_latch_clks);
             } else {
               io->ClearBits(h.strobe);
             }
-            if (spwm_dp3265s_data_latch) {
+            if (spwm_dp3265s_data_latch || spwm_sm16269s_post_data_latch) {
               spwm_first_dp3265s_data_latch = false;
             }
             // DP3265S: DAT_LAT writes SRAM. ROW belongs to display scanning,
@@ -2032,7 +2169,8 @@ void spwm_upload_framebuffer_shiftreg(
       spwm_get_panel_settings().oe_style == SPWM_OE_STYLE_DP3265S ||
       spwm_get_panel_settings().oe_style == SPWM_OE_STYLE_SM16269S;
   const bool spwm_sm16269s_post_data_latch =
-      spwm_oe_style_is_sm16269s(spwm_get_panel_settings().oe_style);
+      spwm_oe_style_uses_sm16269s_post_data_latch(
+          spwm_get_panel_settings().oe_style);
   const bool spwm_dp3265s_data_latch =
       spwm_oe_style_is_dp3265s(spwm_get_panel_settings().oe_style);
   const bool spwm_dp3265s_first_data_vsync =
@@ -2064,17 +2202,30 @@ void spwm_upload_framebuffer_shiftreg(
                            spwm_data_mask, spwm_oe_gate);
           if (spwm_latch) {
             if (spwm_sm16269s_post_data_latch || spwm_dp3265s_data_latch) {
-              const int spwm_post_latch_clks =
-                  (spwm_dp3265s_first_data_vsync &&
-                   spwm_first_dp3265s_data_latch)
-                      ? spwm_get_dp3265s_vsync_latch_clks()
-                      : 1;
+              if (spwm_sm16269s_post_data_latch) {
+                spwm_cancel_oe_gate(io, h, spwm_oe_gate);
+              }
+              int spwm_post_latch_clks = 1;
+              if (spwm_dp3265s_first_data_vsync &&
+                  spwm_first_dp3265s_data_latch) {
+                spwm_post_latch_clks = spwm_get_dp3265s_vsync_latch_clks();
+              } else if (spwm_sm16269s_post_data_latch) {
+                const SPWM_Panel_Settings &spwm_settings =
+                    spwm_get_panel_settings();
+                spwm_post_latch_clks =
+                    std::max(1, spwm_settings.data_latch_clocks);
+                if (spwm_first_dp3265s_data_latch &&
+                    spwm_settings.first_data_latch_clocks > 0) {
+                  spwm_post_latch_clks =
+                      spwm_settings.first_data_latch_clocks;
+                }
+              }
               spwm_emit_post_data_latch_pulses(
                   io, h, spwm_rgb_mask, spwm_post_latch_clks);
             } else {
               io->ClearBits(h.strobe);
             }
-            if (spwm_dp3265s_data_latch) {
+            if (spwm_dp3265s_data_latch || spwm_sm16269s_post_data_latch) {
               spwm_first_dp3265s_data_latch = false;
             }
             // DP3265S: keep display ROW out of the upload path by default.
@@ -2426,18 +2577,26 @@ SPWM_Scan_Config spwm_make_runtime_scan_config(
     int spwm_row_clks,
     bool spwm_skip_first_oe) {
   int spwm_oe_clks = spwm_get_oe_clk_length();
+  if (spwm_get_panel_settings().display_oe_clk_length > 0) {
+    spwm_oe_clks = spwm_get_panel_settings().display_oe_clk_length;
+  }
   if (spwm_oe_style_is_dat_lat_only(spwm_oe_style)) {
     // DP3265S panels drive their own internal PWM via ROW pulses after
     // DAT_LAT, so the generic upload/free-run OE gating path must be
     // suppressed.
     spwm_oe_clks = 0;
   }
+  const int spwm_setup_clks =
+      spwm_resolve_scan_setup_clks(spwm_oe_style, spwm_row_clks);
+  const bool spwm_row_before_oe =
+      spwm_oe_style_uses_row_before_oe(spwm_oe_style) ||
+      (spwm_row_clks > 0 && spwm_setup_clks >= spwm_row_clks);
   return spwm_make_scan_config(
       spwm_row_clks,
-      spwm_resolve_scan_setup_clks(spwm_oe_style, spwm_row_clks),
+      spwm_setup_clks,
       spwm_oe_clks,
       spwm_skip_first_oe,
-      spwm_oe_style_uses_row_before_oe(spwm_oe_style));
+      spwm_row_before_oe);
 }
 
 SPWM_Scan_Config spwm_make_dp3265s_upload_display_scan_config() {
@@ -2587,6 +2746,35 @@ void spwm_configure_panel_type(const char *spwm_panel_type, int spwm_columns,
     spwm_runtime_state.init_sequence = spwm_profile->init_sequence;
   } else {
     spwm_runtime_state.init_sequence = spwm_default_profile.init_sequence;
+  }
+
+  const char *spwm_sm_debug = getenv("SPWM_SM16269S_DEBUG");
+  if (spwm_sm_debug != nullptr && *spwm_sm_debug != '\0' &&
+      strcmp(spwm_sm_debug, "0") != 0 &&
+      strcasecmp(spwm_sm_debug, "false") != 0) {
+    fprintf(stderr,
+            "[spwm] requested_panel=%s selected_profile=%s oe_style=%d "
+            "rows=%d cols=%d chips=%d map=%d row_offset=%d row0_source=%d "
+            "row7_source=%d repeats=%d "
+            "lat=%d first_lat=%d abc_offset=%d init_once=%d sync=%d "
+            "slowdown_checked_in_launcher\n",
+            spwm_panel_type != nullptr ? spwm_panel_type : "",
+            spwm_profile != nullptr ? spwm_profile->panel_type
+                                    : spwm_default_profile.panel_type,
+            static_cast<int>(spwm_runtime_state.panel_settings.oe_style),
+            spwm_runtime_state.panel_settings.default_rows,
+            spwm_runtime_state.panel_settings.default_columns,
+            spwm_runtime_state.panel_settings.upload_chip_count,
+            spwm_runtime_state.panel_settings.banked_upload_variant,
+            spwm_runtime_state.panel_settings.banked_upload_row_offset,
+            spwm_runtime_state.panel_settings.banked_upload_row0_source,
+            spwm_runtime_state.panel_settings.banked_upload_row7_source,
+            spwm_runtime_state.panel_settings.frame_upload_repeats,
+            spwm_runtime_state.panel_settings.data_latch_clocks,
+            spwm_runtime_state.panel_settings.first_data_latch_clocks,
+            spwm_runtime_state.panel_settings.display_row_address_offset,
+            spwm_runtime_state.panel_settings.init_sequence_once ? 1 : 0,
+            spwm_runtime_state.panel_settings.frame_sync_latch_mode);
   }
 }
 
@@ -2820,19 +3008,21 @@ void spwm_dump_to_matrix(GPIO *io, const HardwareMapping &h,
                                     true);
 
   // Start the frame with the panel-specific init script.
-  // For DP3265S, only emit the init sequence on the first frame to avoid
-  // ABC=0 staying active too long during register writes every frame.
-  static bool spwm_dp3265s_init_done = false;
+  // SRAM/SPWM panels should not receive the configuration stream every frame:
+  // on some chips those register writes can also leave visible data in SRAM.
+  static bool spwm_spwm_init_done = false;
   const bool spwm_skip_init =
-      spwm_oe_style_is_dat_lat_only(spwm_oe_style) && spwm_dp3265s_init_done;
+      spwm_oe_style_init_once(spwm_oe_style) && spwm_spwm_init_done;
   if (!spwm_continuous_scan) {
     io->ClearBits(h.output_enable);
   }
   if (!spwm_skip_init) {
     spwm_emit_init_sequence(io, h);
-    if (spwm_oe_style_is_dat_lat_only(spwm_oe_style)) {
-      spwm_dp3265s_init_done = true;
+    if (spwm_oe_style_init_once(spwm_oe_style)) {
+      spwm_spwm_init_done = true;
     }
+  } else {
+    spwm_emit_frame_sync_latches(io, h);
   }
   if (spwm_oe_style_is_dp3265s(spwm_oe_style) &&
       (!spwm_continuous_scan || spwm_get_dp3265s_vsync_mode() == 2)) {
@@ -2848,7 +3038,8 @@ void spwm_dump_to_matrix(GPIO *io, const HardwareMapping &h,
   // SetRowAddress() only clears/reserves the row pins. The real row change is
   // emitted later by the blank-clock waveform during scan timing.
   if (!spwm_continuous_row_address) {
-    spwm_row_setter->SetRowAddress(io, spwm_scan_state.row);
+    spwm_set_direct_scan_row_address(
+        io, spwm_row_setter, spwm_scan_state.row, spwm_upload_rows);
   }
 
   // The panel profile decides whether the startup OE burst is standalone or
@@ -2896,19 +3087,25 @@ void spwm_dump_to_matrix(GPIO *io, const HardwareMapping &h,
   // row stepping happens through the blank-clock waveform, so upload and scan
   // phase must stay tightly synchronized. --led-spwm-scan can extend the wrap
   // count beyond upload rows for panels such as 1/43-scan ICND1065L modules.
-  if (!spwm_blank_clock_row_transport) {
-    spwm_upload_framebuffer_direct(
-        io, h, spwm_row_setter, spwm_framebuffer_view, spwm_rgb_mask,
-        spwm_data_mask, spwm_upload_rows, spwm_chip_count,
-        spwm_channels_per_chip, spwm_word_bits, spwm_upload_scan_config,
-        &spwm_oe_gate, &spwm_scan_state, &spwm_initial_oe_pending);
-  } else {
-    spwm_upload_framebuffer_shiftreg(
-        io, h, spwm_framebuffer_view, spwm_rgb_mask, spwm_data_mask,
-        spwm_upload_rows, spwm_effective_scan_rows, spwm_chip_count,
-        spwm_channels_per_chip,
-        spwm_word_bits, spwm_upload_scan_config,
-        &spwm_oe_gate, &spwm_scan_state, &spwm_initial_oe_pending);
+  const int spwm_frame_upload_repeats =
+      std::max(1, spwm_get_panel_settings().frame_upload_repeats);
+  for (int spwm_upload_repeat = 0;
+       spwm_upload_repeat < spwm_frame_upload_repeats;
+       ++spwm_upload_repeat) {
+    if (!spwm_blank_clock_row_transport) {
+      spwm_upload_framebuffer_direct(
+          io, h, spwm_row_setter, spwm_framebuffer_view, spwm_rgb_mask,
+          spwm_data_mask, spwm_upload_rows, spwm_chip_count,
+          spwm_channels_per_chip, spwm_word_bits, spwm_upload_scan_config,
+          &spwm_oe_gate, &spwm_scan_state, &spwm_initial_oe_pending);
+    } else {
+      spwm_upload_framebuffer_shiftreg(
+          io, h, spwm_framebuffer_view, spwm_rgb_mask, spwm_data_mask,
+          spwm_upload_rows, spwm_effective_scan_rows, spwm_chip_count,
+          spwm_channels_per_chip,
+          spwm_word_bits, spwm_upload_scan_config,
+          &spwm_oe_gate, &spwm_scan_state, &spwm_initial_oe_pending);
+    }
   }
   if (spwm_continuous_scan) {
     spwm_have_uploaded_continuous_frame = true;

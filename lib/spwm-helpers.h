@@ -33,6 +33,7 @@ enum SPWM_OE_Style {
   SPWM_OE_STYLE_FM6363 = 1,
   SPWM_OE_STYLE_DP3265S = 2,  // ROW pulse after DAT_LAT only, no free-run
   SPWM_OE_STYLE_SM16269S = 3,  // DP-like ROW/RCLK scan, dual-latch data/config
+  SPWM_OE_STYLE_SM16269S_FM = 4,  // FM scan timing with post-data DAT_LAT
 };
 
 // SPWM-only row-address transport selected by --led-spwm-row-addr-type.
@@ -51,11 +52,23 @@ struct SPWM_Panel_Settings {
   int upload_channels_per_chip;   // Driver outputs per cascaded chip.
   int upload_word_bits;           // Bits shifted per grayscale word.
   int upload_chip_count;          // 0 => derive from columns/channels_per_chip.
+  int banked_upload_variant;      // Physical bank/chip order for 64x32/8-chip SPWM panels.
+  int banked_upload_row_offset;   // Rotate source rows inside each 8-row bank.
+  int banked_upload_row0_source;  // Optional source row for the first row in each 8-row bank.
+  int banked_upload_row7_source;  // Optional source row for the last row in each 8-row bank.
+  int frame_upload_repeats;       // Repeat RGB SRAM upload to fill multiple display groups.
+  int data_latch_clocks;          // Post-data LAT clocks for RGB SRAM writes.
+  int first_data_latch_clocks;    // Optional post-data LAT clocks for first SRAM write.
+  int display_row_address_offset; // Rotate direct ABC row address during display scan.
+  bool init_sequence_once;        // Send register init once, then frame sync only.
+  int frame_sync_latch_mode;      // 0=none, 1=3/14 LAT, 2=3/11/14 LAT.
   int end_of_frame_extra_row_cycles;  // SPWM_END_OF_FRAME_EXTRA_ROW_CYCLES
   int frame_end_sleep_us;         // SPWM_FRAME_END_SLEEP_US
   int first_oe_clk_length;        // SPWM_FIRST_OE_CLK_LENGTH
   int oe_clk_length;              // SPWM_OE_CLK_LENGTH
   int oe_clk_look_behind;         // SPWM_OE_CLK_LOOK_BEHIND
+  int display_oe_clk_length;      // Display-only OE/RCLK burst length, 0 => oe_clk_length.
+  int display_oe_start_delay_clks; // Delay display OE after a row-address change.
   SPWM_OE_Style oe_style;         // Panel-tied OE timing profile.
   
   bool auto_tune_oe_gaps;         // SPWM_AUTO_TUNE_OE_GAPS

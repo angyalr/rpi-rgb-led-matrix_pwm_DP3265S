@@ -17,7 +17,8 @@ FM6373 / DP32019B - 128x64 \
 FM6363 / DP32020A - 128x64 \
 SM16380SH - 128x64 \
 ICND1065L / 5958 - 172x86 \
-DP3265S - 64x32 (experimental profile, default --led-rows=32 --led-cols=64)
+DP3265S - 64x32 (experimental profile, default --led-rows=32 --led-cols=64) \
+SM16269S - 64x32 (experimental profile, default --led-rows=32 --led-cols=64)
 
 [Further discussion for SPWM panels](https://github.com/hzeller/rpi-rgb-led-matrix/issues/1866).
 
@@ -61,6 +62,14 @@ Pi 4 - ICND1065L 172x86 Example
 Pi 4 - SM16380SH 128x64 Example
 
     taskset -c 2 chrt -f 99 /opt/rpi-rgb-led-matrix/examples-api-use/demo -D8 --led-rows=64 --led-cols=128 --led-scan-mode=0 --led-gpio-mapping=adafruit-hat-pwm --led-brightness=50 --led-slowdown-gpio=5 --led-pwm-bits=11 --led-limit-refresh=60 --led-no-busy-waiting --led-panel-type=sm16380sh --led-spwm-row-addr-type=0
+
+Pi 4 - DP3265S 64x32 Example
+
+    taskset -c 2 chrt -f 99 /opt/rpi-rgb-led-matrix/examples-api-use/demo -D0 --led-rows=32 --led-cols=64 --led-chain=1 --led-parallel=1 --led-scan-mode=0 --led-brightness=50 --led-slowdown-gpio=2 --led-pwm-bits=11 --led-limit-refresh=60 --led-no-busy-waiting --led-panel-type=dp3265s --led-spwm-row-addr-type=0
+
+Pi 4 - SM16269S 64x32 Example
+
+    taskset -c 2 chrt -f 99 /opt/rpi-rgb-led-matrix/examples-api-use/demo -D0 --led-rows=32 --led-cols=64 --led-chain=1 --led-parallel=1 --led-scan-mode=0 --led-brightness=50 --led-slowdown-gpio=6 --led-pwm-bits=11 --led-limit-refresh=60 --led-no-busy-waiting --led-panel-type=sm16269s --led-spwm-row-addr-type=0
 
 Pi 3 - FM6373 / DP32020A 128x64 Example
 

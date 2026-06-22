@@ -91,6 +91,16 @@ SPWM_Panel_Settings spwm_make_default_panel_settings() {
   spwm_settings.upload_channels_per_chip = 16;
   spwm_settings.upload_word_bits = 16;
   spwm_settings.upload_chip_count = 0;  // derive from columns / channels_per_chip
+  spwm_settings.banked_upload_variant = 0;
+  spwm_settings.banked_upload_row_offset = 0;
+  spwm_settings.banked_upload_row0_source = -1;
+  spwm_settings.banked_upload_row7_source = -1;
+  spwm_settings.frame_upload_repeats = 1;
+  spwm_settings.data_latch_clocks = 1;
+  spwm_settings.first_data_latch_clocks = 0;
+  spwm_settings.display_row_address_offset = 0;
+  spwm_settings.init_sequence_once = false;
+  spwm_settings.frame_sync_latch_mode = 0;
   spwm_settings.auto_tune_oe_gaps = true;
   spwm_settings.auto_tune_frames = 20;
   spwm_settings.auto_tune_max_step_clks = 50;
@@ -101,6 +111,8 @@ SPWM_Panel_Settings spwm_make_default_panel_settings() {
   spwm_settings.oe_after_upload_clk_count = 112;
   spwm_settings.oe_clk_look_behind = 16;
   spwm_settings.oe_clk_length = 4;
+  spwm_settings.display_oe_clk_length = 0;
+  spwm_settings.display_oe_start_delay_clks = 0;
   spwm_settings.shiftreg_row_select_a_pulse_clk_count = 2;
   spwm_settings.shiftreg_row_select_a_pulse_start_clk = 0;
   spwm_settings.shiftreg_row_select_a_pulse_centered = true;
@@ -440,7 +452,7 @@ static const SPWM_Panel_Settings SPWM_SM16269S_SETTINGS = []() {
 }();
 
 static const uint16_t SPWM_SM16269S_GAIN = 0x003f;  // G5..G0 current gain, max
-static const uint16_t SPWM_SM16269S_CFG1 = 0x1810;  // ghost=3, precharge=1
+static const uint16_t SPWM_SM16269S_CFG1 = 0x2408;  // test value from SM16269S bring-up notes
 static const uint16_t SPWM_SM16269S_CFG2 = 0x3ce0;  // 1/8 scan, high-refresh, 16-bit
 // SM16269S dual-latch style: shift the 16-bit payload while LE is low, then
 // select the destination register with a post-data LE-high DCLK burst.
@@ -455,13 +467,20 @@ static const SPWM_Register_Timing SPWM_SM16269S_CFG2_TIMING =
     spwm_make_register_timing(SPWM_SM16269S_CFG2_LAT);
 
 static const SPWM_Init_Step SPWM_SM16269S_INIT_STEPS[] = {
+    {SPWM_INIT_STEP_REGISTER, 2, 0, 0},  // config1, post-data LE=5
+    {SPWM_INIT_STEP_REGISTER, 3, 0, 0},  // config2, post-data LE=7
+};
+
+static const SPWM_Init_Step SPWM_SM16269S_GAIN_INIT_STEPS[] = {
     {SPWM_INIT_STEP_REGISTER, 1, 0, 0},  // current gain, post-data LE=3
-    {SPWM_INIT_STEP_REGISTER, 2, 0, 0},  // optional config1, post-data LE=5
-    {SPWM_INIT_STEP_REGISTER, 3, 0, 0},  // optional config2, post-data LE=7
+    {SPWM_INIT_STEP_REGISTER, 2, 0, 0},  // config1, post-data LE=5
+    {SPWM_INIT_STEP_REGISTER, 3, 0, 0},  // config2, post-data LE=7
 };
 
 static const SPWM_Init_Sequence SPWM_SM16269S_INIT_SEQUENCE =
     spwm_make_init_sequence(SPWM_SM16269S_INIT_STEPS);
+static const SPWM_Init_Sequence SPWM_SM16269S_GAIN_INIT_SEQUENCE =
+    spwm_make_init_sequence(SPWM_SM16269S_GAIN_INIT_STEPS);
 
 SPWM_Config spwm_create_sm16269s_config(const SPWM_Panel_Settings &cfg, int cols) {
   SPWM_Config c(3,
@@ -748,6 +767,30 @@ static const SPWM_Panel_Settings SPWM_SM16380SH_SETTINGS = []() {
   spwm_settings.oe_clk_look_behind = 16;
   return spwm_settings;
 }();
+
+static const SPWM_Panel_Settings SPWM_SM16269S_16380_FM_SETTINGS = []() {
+  SPWM_Panel_Settings spwm_settings = SPWM_SM16380SH_SETTINGS;
+  spwm_settings.default_rows = 32;
+  spwm_settings.default_columns = 64;
+  spwm_settings.upload_chip_count = 8;
+  spwm_settings.auto_tune_oe_gaps = false;
+  spwm_settings.end_of_frame_extra_row_cycles = 64;
+  spwm_settings.frame_end_sleep_us = 0;
+  return spwm_settings;
+}();
+
+static const SPWM_Panel_Settings SPWM_SM16269S_16380_FM_G2_SETTINGS = []() {
+  SPWM_Panel_Settings spwm_settings = SPWM_SM16269S_16380_FM_SETTINGS;
+  spwm_settings.frame_upload_repeats = 2;
+  return spwm_settings;
+}();
+
+static const SPWM_Panel_Settings SPWM_SM16269S_16380_FM_G2_LB107_SETTINGS = []() {
+  SPWM_Panel_Settings spwm_settings = SPWM_SM16269S_16380_FM_G2_SETTINGS;
+  spwm_settings.oe_clk_look_behind = 107;
+  return spwm_settings;
+}();
+
 static const uint16_t SPWM_SM16380SH_REGISTER1_WORD = 0x00AA;
 static const uint16_t SPWM_SM16380SH_REGISTER2_WORD = 0x01AA;
 static const uint16_t SPWM_SM16380SH_REGISTER4_WORD = 0xF003;
@@ -942,9 +985,13 @@ static const SPWM_Panel_Profile SPWM_PANEL_PROFILES[] = {
      spwm_create_dp3265s_config,
      SPWM_DP3265S_INIT_SEQUENCE},
     {"sm16269s",
-     SPWM_SM16269S_SETTINGS,
-     spwm_create_sm16269s_config,
-     SPWM_SM16269S_INIT_SEQUENCE},
+     SPWM_SM16269S_16380_FM_G2_LB107_SETTINGS,
+     spwm_create_sm16380sh_config,
+     SPWM_SM16380SH_INIT_SEQUENCE},
+    {"sm16269s_16380_fm_g2_lb107",
+     SPWM_SM16269S_16380_FM_G2_LB107_SETTINGS,
+     spwm_create_sm16380sh_config,
+     SPWM_SM16380SH_INIT_SEQUENCE},
     {"fm6363",
      SPWM_FM6363_SETTINGS,
      spwm_create_fm6363_config,
@@ -963,6 +1010,13 @@ const SPWM_Panel_Profile &spwm_get_default_panel_profile() {
 // Look up a panel profile by name using the same prefix match used by the
 // runtime panel-type option.
 const SPWM_Panel_Profile *spwm_find_panel_profile(const char *spwm_panel_type) {
+  for (const SPWM_Panel_Profile &spwm_profile : SPWM_PANEL_PROFILES) {
+    if (spwm_panel_type != nullptr && spwm_profile.panel_type != nullptr &&
+        strcasecmp(spwm_panel_type, spwm_profile.panel_type) == 0) {
+      return &spwm_profile;
+    }
+  }
+
   for (const SPWM_Panel_Profile &spwm_profile : SPWM_PANEL_PROFILES) {
     if (spwm_panel_type_matches(spwm_panel_type, spwm_profile.panel_type)) {
       return &spwm_profile;

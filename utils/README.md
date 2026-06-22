@@ -37,8 +37,8 @@ the [toplevel readme](../README.md#changing-parameters-via-command-line-flags)
  --led-pwm-lsb-nanoseconds : PWM Nanoseconds for LSB (Default: 130)
  --led-pwm-dither-bits=<0..2> : Time dithering of lower bits (Default: 0)
  --led-no-hardware-pulse   : Don't use hardware pin-pulse generation.
- --led-panel-type=<name>   : Needed to initialize special panels. Supported: 'FM6126A', 'FM6127', 'FM6373', 'ICND1065L', 'SM16380SH', 'FM6363'
- --led-slowdown-gpio=<0..4>: Slowdown GPIO. Needed for faster Pis/slower panels (Default: 1).
+ --led-panel-type=<name>   : Needed to initialize special panels. Supported: 'dp3265s', 'sm16269s', 'FM6126A', 'FM6127', 'FM6373', 'ICND1065L', 'SM16380SH', 'FM6363'
+ --led-slowdown-gpio=<0..8>: Slowdown GPIO. Needed for faster Pis/slower panels (Default: 1).
  --led-daemon              : Make the process run in the background as daemon.
  --led-no-drop-privs       : Don't drop privileges from 'root' after initializing the hardware.
  --led-drop-priv-user      : Drop privileges to this username or UID (Default: 'daemon')
