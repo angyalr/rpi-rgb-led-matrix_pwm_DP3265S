@@ -22,6 +22,8 @@ bindings/c#/examples/StreamPlayer/StreamPlayer.csproj.lscache
 runtext.ini
 runtext.log
 *.log
+bindings/python/ms/
+bindings/python/sefag/
 bindings/python/ms/runtext.py
 bindings/python/ms/samplebase.py
 bindings/python/ms/config_store.py
